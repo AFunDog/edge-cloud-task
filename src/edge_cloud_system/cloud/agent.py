@@ -33,8 +33,9 @@ class CloudAgent:
     def _build_prompt(self, request: AgentRequest, knowledge_hits: list[str], search_hits: list[str]) -> str:
         return "\n".join(
             [
+                "请结合边端检测上下文、知识库和搜索结果，输出：1. 场景理解；2. 风险判断；3. 边云调度建议；4. 后续操作。",
                 f"问题：{request.question}",
-                f"设备：{request.device_id or 'management-console'}",
+                f"设备：{request.device_id or 'web-console'}",
                 f"上下文：{request.context}",
                 f"知识库：{knowledge_hits}",
                 f"搜索：{search_hits}",

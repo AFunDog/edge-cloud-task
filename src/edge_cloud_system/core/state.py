@@ -24,6 +24,13 @@ class RuntimeState:
         with self._lock:
             self._task_logs.appendleft(log)
 
+    def latest_detection(self, device_id: str | None = None) -> DetectionResult | None:
+        with self._lock:
+            for detection in self._detections:
+                if device_id is None or detection.device_id == device_id:
+                    return detection
+        return None
+
     def snapshot(self) -> dict:
         with self._lock:
             return {

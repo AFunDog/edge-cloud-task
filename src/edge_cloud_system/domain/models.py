@@ -32,6 +32,9 @@ class DetectionResult(BaseModel):
     device_id: str
     frame_id: str = Field(default_factory=lambda: uuid4().hex)
     fps: float = 0
+    frame_width: int = 640
+    frame_height: int = 360
+    image_jpeg_base64: str | None = None
     detections: list[Detection] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

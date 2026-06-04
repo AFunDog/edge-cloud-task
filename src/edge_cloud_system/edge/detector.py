@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-import random
 import time
+from pathlib import Path
 from typing import Any
 
 from edge_cloud_system.domain.models import BoundingBox, Detection, DetectionResult
 
 
 class YoloDetector:
-    def __init__(self, model_path: str = "") -> None:
-        self.model_path = model_path
+    def __init__(self, model_path: str = "", public_dir: str | Path = "public") -> None:
+        self.model_path = str(self._resolve_model_path(model_path, Path(public_dir)))
         self._model: Any | None = None
         self._load_error: str | None = None
-        if model_path:
-            self._try_load_model(model_path)
+        if self.model_path:
+            self._try_load_model(self.model_path)
 
     @property
     def mode(self) -> str:
-        return "ultralytics" if self._model is not None else "simulation"
+        return "ultralytics"
 
     @property
     def load_error(self) -> str | None:
@@ -30,16 +30,37 @@ class YoloDetector:
             self._model = YOLO(model_path)
         except Exception as exc:  # pragma: no cover - environment dependent
             self._load_error = str(exc)
-            self._model = None
+            raise RuntimeError(f"YOLO 模型加载失败：{exc}") from exc
 
-    def detect(self, device_id: str, frame: Any | None = None) -> DetectionResult:
+    def _resolve_model_path(self, model_path: str, public_dir: Path) -> Path | str:
+        if model_path:
+            return model_path
+        candidates: list[Path] = []
+        if public_dir.exists():
+            for pattern in ("*.pt", "*.onnx", "*.engine"):
+                candidates.extend(sorted(public_dir.rglob(pattern)))
+        if not candidates:
+            raise FileNotFoundError("根目录 public/ 下未找到 YOLO 模型文件，请放入 .pt、.onnx 或 .engine 文件。")
+        return candidates[0]
+
+    def detect(self, device_id: str, frame: Any | None = None, image_jpeg_base64: str | None = None) -> DetectionResult:
+        if frame is None:
+            raise RuntimeError("未读取到摄像头帧，无法执行边端 YOLO 检测。")
+        if self._model is None:
+            raise RuntimeError("YOLO 模型未加载，无法执行边端检测。")
+
         start = time.perf_counter()
-        if self._model is not None and frame is not None:
-            detections = self._detect_with_model(frame)
-        else:
-            detections = self._simulate_detections()
+        detections = self._detect_with_model(frame)
         elapsed = max(time.perf_counter() - start, 1e-6)
-        return DetectionResult(device_id=device_id, fps=round(1 / elapsed, 2), detections=detections)
+        width, height = self._frame_size(frame)
+        return DetectionResult(
+            device_id=device_id,
+            fps=round(1 / elapsed, 2),
+            frame_width=width,
+            frame_height=height,
+            image_jpeg_base64=image_jpeg_base64,
+            detections=detections,
+        )
 
     def _detect_with_model(self, frame: Any) -> list[Detection]:  # pragma: no cover - requires model
         results = self._model(frame, verbose=False)
@@ -58,18 +79,8 @@ class YoloDetector:
                 )
         return parsed
 
-    def _simulate_detections(self) -> list[Detection]:
-        labels = ["person", "car", "bicycle", "truck"]
-        count = random.randint(1, 4)
-        detections: list[Detection] = []
-        for index in range(count):
-            left = 24 + index * 78
-            top = 36 + index * 34
-            detections.append(
-                Detection(
-                    label=labels[index % len(labels)],
-                    confidence=round(random.uniform(0.72, 0.96), 2),
-                    box=BoundingBox(x1=left, y1=top, x2=left + 96, y2=top + 74),
-                )
-            )
-        return detections
+    def _frame_size(self, frame: Any | None) -> tuple[int, int]:
+        if frame is None:
+            return 640, 360
+        height, width = frame.shape[:2]
+        return int(width), int(height)

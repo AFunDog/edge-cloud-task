@@ -11,7 +11,7 @@ class KnowledgeBase:
 
         query_terms = {term for term in query.lower().split() if term}
         scored: list[tuple[int, str]] = []
-        for path in self.root.rglob("*.txt"):
+        for path in self._iter_documents():
             text = path.read_text(encoding="utf-8", errors="ignore")
             score = sum(1 for term in query_terms if term in text.lower())
             if score > 0 or not query_terms:
@@ -19,3 +19,7 @@ class KnowledgeBase:
                 scored.append((score, f"{path.name}: {snippet}"))
         scored.sort(key=lambda item: item[0], reverse=True)
         return [item[1] for item in scored[:limit]]
+
+    def _iter_documents(self):
+        for pattern in ("*.txt", "*.md"):
+            yield from self.root.rglob(pattern)

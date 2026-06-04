@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+COPY public ./public
+
+RUN pip install --no-cache-dir -e .[yolo]
+
+CMD ["python", "-m", "edge_cloud_system.edge.runner"]

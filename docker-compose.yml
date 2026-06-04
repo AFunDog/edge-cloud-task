@@ -1,22 +1,39 @@
 services:
-  api:
+  cloud:
     build: .
     command: uvicorn edge_cloud_system.api.main:app --host 0.0.0.0 --port 8000
     env_file:
-      - .env
+      - path: .env
+        required: false
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
 
-  management:
-    build: .
-    command: streamlit run src/edge_cloud_system/management/app.py --server.address 0.0.0.0 --server.port 8501
-    env_file:
-      - .env
-    environment:
-      API_BASE_URL: http://api:8000
+  web:
+    build:
+      context: ./src/frontend
     ports:
-      - "8501:8501"
+      - "8080:80"
     depends_on:
-      - api
+      - cloud
+
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    command: python -m edge_cloud_system.edge.runner --task "车辆计数"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      API_BASE_URL: http://cloud:8000
+      PUBLIC_DIR: /app/public
+    volumes:
+      - ./public:/app/public:ro
+    devices:
+      - "/dev/video0:/dev/video0"
+    depends_on:
+      - cloud
+    profiles:
+      - edge
