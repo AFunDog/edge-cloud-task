@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    command: uvicorn edge_cloud_system.api.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+
+  management:
+    build: .
+    command: streamlit run src/edge_cloud_system/management/app.py --server.address 0.0.0.0 --server.port 8501
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
