@@ -22,10 +22,18 @@ class BoundingBox(BaseModel):
     y2: float
 
 
+class Keypoint(BaseModel):
+    x: float
+    y: float
+    confidence: float = Field(ge=0, le=1)
+    name: str | None = None
+
+
 class Detection(BaseModel):
     label: str
     confidence: float = Field(ge=0, le=1)
     box: BoundingBox
+    keypoints: list[Keypoint] = Field(default_factory=list)
 
 
 class DetectionResult(BaseModel):
@@ -35,6 +43,7 @@ class DetectionResult(BaseModel):
     inference_ms: float = 0
     backend: str = ""
     model_path: str = ""
+    model_task: str = ""
     frame_width: int = 640
     frame_height: int = 360
     image_jpeg_base64: str | None = None

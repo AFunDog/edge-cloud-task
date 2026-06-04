@@ -39,7 +39,7 @@ npm run dev
 .\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "车辆计数" --once
 ```
 
-检测器会优先尝试加载同名 `.onnx` 模型并使用 ONNX Runtime；如果当前只有 `.pt`，会先自动导出一次 ONNX，然后切换到 ONNX Runtime，以提高实时性。
+检测器只加载 `.onnx` 模型并使用 ONNX Runtime，避免额外的导出依赖和运行时分支。
 
 如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
 
@@ -49,7 +49,7 @@ npm run dev
 
 实时调试窗口会显示检测框、类别、置信度、显示 FPS、YOLO FPS、推理耗时、目标数、后端和调度信息；按 `q` 或 `Esc` 退出。
 
-YOLO 模型放在根目录 `public/` 下，支持 `.onnx`、OpenVINO `.xml` 和 `.pt`。也可以在 `.env` 中配置 `YOLO_MODEL_PATH` 指向具体模型。
+YOLO 模型放在根目录 `public/` 下，当前运行时只支持 `.onnx`。要切换到姿态检测模型，直接在 `.env` 里设置 `YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose.onnx`，边端会自动识别 `task=pose` 并绘制关键点。
 
 如果要快速下载官方姿态模型：
 

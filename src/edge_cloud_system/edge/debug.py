@@ -6,6 +6,27 @@ from edge_cloud_system.domain.models import DetectionResult, ScheduleDecision, T
 
 WINDOW_NAME = "Edge Debug View"
 
+POSE_SKELETON = [
+    (5, 7),
+    (7, 9),
+    (6, 8),
+    (8, 10),
+    (5, 6),
+    (5, 11),
+    (6, 12),
+    (11, 12),
+    (11, 13),
+    (13, 15),
+    (12, 14),
+    (14, 16),
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 4),
+    (0, 5),
+    (0, 6),
+]
+
 
 def render_debug_window(
     frame: Any,
@@ -43,6 +64,8 @@ def render_debug_window(
 
             cv2.rectangle(canvas, (x1, y1), (x2, y2), box_color, 2)
             _draw_label(canvas, label, (x1, max(24, y1 - 8)), text_color, shadow_color, box_color)
+            if detection.keypoints:
+                _draw_keypoints(canvas, detection.keypoints, text_color)
 
     fps_value = display_fps if display_fps is not None else (result.fps if result is not None else 0.0)
     object_count = len(result.detections) if result is not None else 0
@@ -107,3 +130,26 @@ def _draw_status_text(
     thickness = 2
     cv2.putText(canvas, text, origin, font, font_scale, shadow_color, thickness + 3, cv2.LINE_AA)
     cv2.putText(canvas, text, origin, font, font_scale, text_color, thickness, cv2.LINE_AA)
+
+
+def _draw_keypoints(canvas: Any, keypoints: list[Any], point_color: tuple[int, int, int]) -> None:
+    import cv2
+
+    height, width = canvas.shape[:2]
+    points: list[tuple[int, int] | None] = []
+    for keypoint in keypoints:
+        if getattr(keypoint, "confidence", 0.0) < 0.25:
+            points.append(None)
+            continue
+        x = max(0, min(int(getattr(keypoint, "x", 0.0)), width - 1))
+        y = max(0, min(int(getattr(keypoint, "y", 0.0)), height - 1))
+        points.append((x, y))
+        cv2.circle(canvas, (x, y), 3, point_color, -1, cv2.LINE_AA)
+
+    limb_color = (67, 219, 255)
+    for start, end in POSE_SKELETON:
+        if start >= len(points) or end >= len(points):
+            continue
+        if points[start] is None or points[end] is None:
+            continue
+        cv2.line(canvas, points[start], points[end], limb_color, 2, cv2.LINE_AA)

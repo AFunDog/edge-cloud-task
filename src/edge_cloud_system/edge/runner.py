@@ -41,7 +41,10 @@ def process_frame(
     result = detector.detect(device_id, frame=frame, image_jpeg_base64=encoded_frame)
     request = TaskRequest(task=task, device_id=device_id, frame_id=result.frame_id)
     decision = scheduler.decide(request)
-    summary = f"{detector.mode} 检测到 {len(result.detections)} 个目标，YOLO FPS {result.fps:.2f}，调度至 {decision.target.value}。"
+    summary = (
+        f"{detector.mode}/{detector.task} 检测到 {len(result.detections)} 个目标，"
+        f"YOLO FPS {result.fps:.2f}，调度至 {decision.target.value}。"
+    )
     if cloud_available is None:
         cloud_available = client.is_available() if publish and not offline else False
 
@@ -156,6 +159,7 @@ def main() -> None:
         return cloud_cache_available
 
     print(f"使用 YOLO 模型：{detector.model_path}")
+    print(f"模型任务：{detector.task}")
     print(f"推理后端：{detector.mode}，输入尺寸：{settings.yolo_input_size}，跳帧：{skip_frames}")
     print(f"请求摄像头尺寸：{camera_width}x{camera_height}")
 

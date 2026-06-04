@@ -9,7 +9,7 @@
 ### 边端 Edge
 
 - `edge/camera.py`：封装摄像头采集。安装 OpenCV 后从本地摄像头读取画面，读取失败直接报错。
-- `edge/detector.py`：封装 YOLO 检测器。优先加载同名 `.onnx` 并使用 ONNX Runtime；如果当前只有 `.pt`，会自动导出 ONNX 后切换到 ONNX Runtime；模型缺失或加载失败直接报错，不做模拟降级。
+- `edge/detector.py`：封装 YOLO 检测器。运行时只加载 `.onnx` 并使用 ONNX Runtime；模型缺失或加载失败直接报错，不做模拟降级。
 - `domain/scheduler.py`：判断任务复杂度。常规目标检测、有人无人、车辆计数在边端完成；语义理解、跨模态检索、异常解释、报告生成转发云端。该调度规则放在领域层，避免云端 API 依赖边端模块。
 - `edge/client.py`：HTTP 客户端，负责把边端检测结果和复杂任务提交给云端。
 - `edge/debug.py`：OpenCV 调试窗口，显示采集画面、检测框、显示 FPS、YOLO FPS、推理耗时、目标数量、后端和调度信息。
