@@ -8,9 +8,11 @@ __pycache__/
 .tmp/
 .env
 data/runtime/
-public/*.pt
-public/*.onnx
-public/*.engine
+public/**/*.pt
+public/**/*.onnx
+public/**/*.xml
+public/**/*.bin
+public/**/*.engine
 *.log
 dist/
 build/
@@ -18,4 +20,3 @@ build/
 src/frontend/node_modules/
 src/frontend/dist/
 src/frontend/.vite/
-public/

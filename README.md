@@ -39,13 +39,26 @@ npm run dev
 .\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "车辆计数" --once
 ```
 
+检测器会优先尝试加载同名 `.onnx` 模型并使用 ONNX Runtime；如果当前只有 `.pt`，会先自动导出一次 ONNX，然后切换到 ONNX Runtime，以提高实时性。
+
 如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
 
 ```powershell
 .\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "车辆计数" --debug-window
 ```
 
-YOLO 模型放在根目录 `public/` 下，支持 `.pt`、`.onnx`、`.engine`。也可以在 `.env` 中配置 `YOLO_MODEL_PATH` 指向具体模型。
+实时调试窗口会显示检测框、类别、置信度、显示 FPS、YOLO FPS、推理耗时、目标数、后端和调度信息；按 `q` 或 `Esc` 退出。
+
+YOLO 模型放在根目录 `public/` 下，支持 `.onnx`、OpenVINO `.xml` 和 `.pt`。也可以在 `.env` 中配置 `YOLO_MODEL_PATH` 指向具体模型。
+
+如果要快速下载官方姿态模型：
+
+```powershell
+.\.venv\Scripts\python scripts\download_pose_model.py --model yolo26n-pose.pt
+.\.venv\Scripts\python scripts\download_pose_model.py --model yolo26s-pose.pt
+```
+
+当前 Ultralytics 官方姿态模型包括 `yolo26n-pose.pt`、`yolo26s-pose.pt`、`yolo26m-pose.pt`、`yolo26l-pose.pt` 和 `yolo26x-pose.pt`，文档说明这些模型会在首次使用时自动从最新发布版下载。
 
 如果边端和云端分离部署，把 `.env` 里的 `API_BASE_URL` 改成远程云端服务器地址即可。
 

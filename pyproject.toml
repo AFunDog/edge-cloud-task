@@ -13,8 +13,10 @@ dependencies = [
 
 [project.optional-dependencies]
 yolo = [
-    "opencv-python-headless>=4.9.0",
+    "opencv-python>=4.9.0",
     "ultralytics>=8.2.0",
+    "onnxruntime>=1.18.0",
+    "openvino>=2024.0.0",
 ]
 test = [
     "pytest>=8.2.0",

@@ -8,7 +8,13 @@ class Settings(BaseSettings):
     api_base_url: str = "http://localhost:8000"
     edge_device_id: str = "edge-camera-01"
     edge_camera_index: int = 0
-    edge_loop_interval_seconds: float = 1.0
+    edge_camera_width: int = 1280
+    edge_camera_height: int = 720
+    edge_loop_interval_seconds: float = 0.0
+    edge_skip_frames: int = 2
+    yolo_input_size: int = 640
+    yolo_conf_threshold: float = 0.25
+    yolo_iou_threshold: float = 0.7
     public_dir: Path = Path("public")
     yolo_model_path: str = ""
     llm_provider: str = "mock"

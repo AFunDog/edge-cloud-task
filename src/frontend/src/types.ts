@@ -15,6 +15,9 @@ export interface DetectionResult {
   device_id: string
   frame_id: string
   fps: number
+  inference_ms: number
+  backend: string
+  model_path: string
   frame_width: number
   frame_height: number
   image_jpeg_base64?: string | null

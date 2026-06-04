@@ -394,6 +394,14 @@ h1 {
   overflow: auto;
 }
 
+.model-line {
+  padding: 12px 16px;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

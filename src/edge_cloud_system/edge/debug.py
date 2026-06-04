@@ -10,10 +10,13 @@ WINDOW_NAME = "Edge Debug View"
 def render_debug_window(
     frame: Any,
     *,
-    result: DetectionResult,
-    request: TaskRequest,
-    decision: ScheduleDecision,
-    cloud_available: bool,
+    result: DetectionResult | None = None,
+    request: TaskRequest | None = None,
+    decision: ScheduleDecision | None = None,
+    cloud_available: bool | None = None,
+    display_fps: float | None = None,
+    source_fps: float | None = None,
+    source_size: tuple[int, int] | None = None,
     wait_for_key: bool = False,
 ) -> int | None:
     try:
@@ -30,31 +33,26 @@ def render_debug_window(
     text_color = (245, 250, 252)
     shadow_color = (10, 16, 20)
 
-    for detection in result.detections:
-        x1 = max(0, min(int(detection.box.x1), width - 1))
-        y1 = max(0, min(int(detection.box.y1), height - 1))
-        x2 = max(0, min(int(detection.box.x2), width - 1))
-        y2 = max(0, min(int(detection.box.y2), height - 1))
-        label = f"{detection.label} {detection.confidence:.2f}"
+    if result is not None:
+        for detection in result.detections:
+            x1 = max(0, min(int(detection.box.x1), width - 1))
+            y1 = max(0, min(int(detection.box.y1), height - 1))
+            x2 = max(0, min(int(detection.box.x2), width - 1))
+            y2 = max(0, min(int(detection.box.y2), height - 1))
+            label = f"{detection.label} {detection.confidence:.2f}"
 
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), box_color, 2)
-        _draw_label(canvas, label, (x1, max(24, y1 - 8)), text_color, shadow_color, box_color)
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), box_color, 2)
+            _draw_label(canvas, label, (x1, max(24, y1 - 8)), text_color, shadow_color, box_color)
 
-    overlay_lines = [
-        f"device: {request.device_id}",
-        f"task: {request.task}",
-        f"frame: {result.frame_id}",
-        f"fps: {result.fps:.2f}",
-        f"detections: {len(result.detections)}",
-        f"target: {decision.target.value}",
-        f"complexity: {decision.complexity.value}",
-        f"cloud: {'online' if cloud_available else 'offline'}",
-    ]
-    _draw_info_panel(canvas, overlay_lines, text_color, shadow_color)
+    fps_value = display_fps if display_fps is not None else (result.fps if result is not None else 0.0)
+    object_count = len(result.detections) if result is not None else 0
+    _draw_status_text(canvas, f"FPS: {fps_value:.1f}", (10, 30), text_color, shadow_color)
+    _draw_status_text(canvas, f"Objects: {object_count}", (10, 62), text_color, shadow_color)
+    if source_size is not None and source_size[0] > 0 and source_size[1] > 0:
+        _draw_status_text(canvas, f"Source: {source_size[0]}x{source_size[1]}", (10, 94), text_color, shadow_color)
 
     if not getattr(render_debug_window, "_window_ready", False):
-        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW_NAME, min(width, 1280), min(height, 900))
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
         render_debug_window._window_ready = True  # type: ignore[attr-defined]
 
     cv2.imshow(WINDOW_NAME, canvas)
@@ -95,35 +93,17 @@ def _draw_label(
     cv2.putText(canvas, label, (x + 5, y), font, font_scale, text_color, thickness, cv2.LINE_AA)
 
 
-def _draw_info_panel(
+def _draw_status_text(
     canvas: Any,
-    lines: list[str],
+    text: str,
+    origin: tuple[int, int],
     text_color: tuple[int, int, int],
     shadow_color: tuple[int, int, int],
 ) -> None:
     import cv2
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.52
-    thickness = 1
-    padding = 14
-    line_gap = 8
-    max_width = 0
-    line_height = 0
-
-    for line in lines:
-        (text_width, text_height), baseline = cv2.getTextSize(line, font, font_scale, thickness)
-        max_width = max(max_width, text_width)
-        line_height = max(line_height, text_height + baseline)
-
-    panel_width = max_width + padding * 2
-    panel_height = len(lines) * (line_height + line_gap) + padding + 6
-    overlay = canvas.copy()
-    cv2.rectangle(overlay, (12, 12), (12 + panel_width, 12 + panel_height), (12, 18, 22), -1)
-    cv2.addWeighted(overlay, 0.78, canvas, 0.22, 0, canvas)
-
-    y = 12 + padding + line_height
-    for line in lines:
-        cv2.putText(canvas, line, (24, y), font, font_scale, shadow_color, thickness + 2, cv2.LINE_AA)
-        cv2.putText(canvas, line, (24, y), font, font_scale, text_color, thickness, cv2.LINE_AA)
-        y += line_height + line_gap
+    font_scale = 0.85
+    thickness = 2
+    cv2.putText(canvas, text, origin, font, font_scale, shadow_color, thickness + 3, cv2.LINE_AA)
+    cv2.putText(canvas, text, origin, font, font_scale, text_color, thickness, cv2.LINE_AA)

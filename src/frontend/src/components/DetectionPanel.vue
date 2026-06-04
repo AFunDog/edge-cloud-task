@@ -36,6 +36,8 @@ function boxStyle(item: DetectionResult['detections'][number]): Record<string, s
       <div v-if="latestDetection" class="detection-tag">
         <span>Frame {{ latestDetection.frame_id }}</span>
         <span>FPS {{ formatNumber(latestDetection.fps) }}</span>
+        <span>{{ latestDetection.inference_ms }} ms</span>
+        <span>{{ latestDetection.backend }}</span>
         <span>{{ formatTime(latestDetection.created_at) }}</span>
       </div>
 
@@ -69,6 +71,9 @@ function boxStyle(item: DetectionResult['detections'][number]): Record<string, s
           </tr>
         </tbody>
       </table>
+      <div v-if="latestDetection" class="model-line">
+        {{ latestDetection.model_path || 'model path unavailable' }}
+      </div>
       <div v-else class="empty-state">当前没有检测结果。</div>
     </div>
   </div>
