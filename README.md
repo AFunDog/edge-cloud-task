@@ -39,6 +39,12 @@ npm run dev
 .\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "车辆计数" --once
 ```
 
+如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
+
+```powershell
+.\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "车辆计数" --debug-window
+```
+
 YOLO 模型放在根目录 `public/` 下，支持 `.pt`、`.onnx`、`.engine`。也可以在 `.env` 中配置 `YOLO_MODEL_PATH` 指向具体模型。
 
 如果边端和云端分离部署，把 `.env` 里的 `API_BASE_URL` 改成远程云端服务器地址即可。

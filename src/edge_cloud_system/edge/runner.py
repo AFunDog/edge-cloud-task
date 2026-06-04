@@ -6,6 +6,7 @@ from edge_cloud_system.core.config import get_settings
 from edge_cloud_system.domain.models import AgentRequest, EdgeStatus, ExecutionTarget, TaskLog, TaskRequest
 from edge_cloud_system.domain.scheduler import TaskScheduler
 from edge_cloud_system.edge.camera import CameraSource, encode_frame_to_jpeg_base64
+from edge_cloud_system.edge.debug import close_debug_window, render_debug_window
 from edge_cloud_system.edge.client import CloudClient
 from edge_cloud_system.edge.detector import YoloDetector
 
@@ -19,6 +20,8 @@ def run_cycle(
     client: CloudClient,
     device_id: str,
     frame: object | None,
+    debug_window: bool,
+    wait_for_key: bool,
 ) -> None:
     if frame is None:
         raise RuntimeError("未读取到摄像头帧，请检查摄像头权限、索引和占用情况。")
@@ -31,7 +34,24 @@ def run_cycle(
     print(summary)
     print(decision.reason)
 
+    if debug_window:
+        cloud_available = client.is_available()
+        key = render_debug_window(
+            frame,
+            result=result,
+            request=request,
+            decision=decision,
+            cloud_available=cloud_available,
+            wait_for_key=wait_for_key,
+        )
+        if key in (27, ord("q"), ord("Q")):
+            raise KeyboardInterrupt
+
     if offline:
+        return
+
+    if not client.is_available():
+        print("云端 API 当前不可用，边端将继续本地运行并跳过上报。")
         return
 
     client.publish_status(
@@ -61,6 +81,7 @@ def main() -> None:
     parser.add_argument("--camera-index", type=int, default=None, help="摄像头索引，默认读取配置")
     parser.add_argument("--once", action="store_true", help="只采集和处理一帧")
     parser.add_argument("--interval", type=float, default=None, help="循环采集间隔秒数")
+    parser.add_argument("--debug-window", action="store_true", help="打开调试窗口显示画面、数据和标注框")
     args = parser.parse_args()
 
     settings = get_settings()
@@ -72,20 +93,27 @@ def main() -> None:
 
     print(f"使用 YOLO 模型：{detector.model_path}")
 
-    with CameraSource(camera_index) as camera:
-        while True:
-            run_cycle(
-                task=args.task,
-                offline=args.offline,
-                detector=detector,
-                scheduler=scheduler,
-                client=client,
-                device_id=settings.edge_device_id,
-                frame=camera.read(),
-            )
-            if args.once:
-                break
-            time.sleep(interval)
+    try:
+        with CameraSource(camera_index) as camera:
+            while True:
+                run_cycle(
+                    task=args.task,
+                    offline=args.offline,
+                    detector=detector,
+                    scheduler=scheduler,
+                    client=client,
+                    device_id=settings.edge_device_id,
+                    frame=camera.read(),
+                    debug_window=args.debug_window,
+                    wait_for_key=args.once,
+                )
+                if args.once:
+                    break
+                time.sleep(interval)
+    except KeyboardInterrupt:
+        print("已退出调试窗口。")
+    finally:
+        close_debug_window()
 
 
 if __name__ == "__main__":
