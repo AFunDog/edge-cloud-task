@@ -2,7 +2,7 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 
-from backend.shared.edge_cloud_system.domain.models import DetectionResult, EdgeStatus, TaskLog
+from backend.shared.domain.models import DetectionResult, EdgeStatus, TaskLog
 
 
 class RuntimeState:

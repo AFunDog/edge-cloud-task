@@ -1,4 +1,4 @@
-from backend.shared.edge_cloud_system.domain.models import ExecutionTarget, ScheduleDecision, TaskComplexity, TaskRequest
+from backend.shared.domain.models import ExecutionTarget, ScheduleDecision, TaskComplexity, TaskRequest
 
 
 class TaskScheduler:

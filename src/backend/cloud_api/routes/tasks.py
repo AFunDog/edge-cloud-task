@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-from backend.shared.edge_cloud_system.core.state import runtime_state
-from backend.shared.edge_cloud_system.domain.models import TaskLog, TaskRequest
-from backend.shared.edge_cloud_system.domain.scheduler import TaskScheduler
+from backend.shared.core.state import runtime_state
+from backend.shared.domain.models import TaskLog, TaskRequest
+from backend.shared.domain.scheduler import TaskScheduler
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 

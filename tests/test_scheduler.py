@@ -1,5 +1,5 @@
-from backend.shared.edge_cloud_system.domain.models import ExecutionTarget, TaskRequest
-from backend.shared.edge_cloud_system.domain.scheduler import TaskScheduler
+from backend.shared.domain.models import ExecutionTarget, TaskRequest
+from backend.shared.domain.scheduler import TaskScheduler
 
 
 def test_simple_detection_stays_on_edge() -> None:

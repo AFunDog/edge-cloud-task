@@ -4,7 +4,7 @@ from backend.cloud_api.cloud.agent import CloudAgent
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.search import SearchTool
-from backend.shared.edge_cloud_system.core.config import get_settings
+from backend.shared.core.config import get_settings
 
 
 @lru_cache

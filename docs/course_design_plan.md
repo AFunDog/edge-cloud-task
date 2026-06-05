@@ -88,7 +88,7 @@
 - `src/backend/edge_api/runtime/camera.py`：摄像头采集。
 - `src/backend/edge_api/runtime/detector.py`：YOLO 检测。
 - `src/backend/edge_api/runtime/pose.py`：基于关键点的姿态动作规则识别。
-- `src/backend/shared/edge_cloud_system/domain/scheduler.py`：任务复杂度判断与分流。
+- `src/backend/shared/domain/scheduler.py`：任务复杂度判断与分流。
 - `src/backend/edge_api/runtime/client.py`：边云通信客户端。
 - `src/backend/edge_api/runtime/debug.py`：调试窗口和运行信息展示。
 - `src/backend/edge_api/runtime/runner.py`：边端命令行入口。
@@ -128,10 +128,10 @@
 
 对应仓库位置：
 
-- `src/backend/shared/edge_cloud_system/domain/models.py`：请求、响应和共享数据模型。
+- `src/backend/shared/domain/models.py`：请求、响应和共享数据模型。
 - `src/backend/cloud_api/dependencies.py`：云端服务依赖装配。
-- `src/backend/shared/edge_cloud_system/core/config.py`：配置读取。
-- `src/backend/shared/edge_cloud_system/core/state.py`：共享运行状态。
+- `src/backend/shared/core/config.py`：配置读取。
+- `src/backend/shared/core/state.py`：共享运行状态。
 
 职责说明：
 
@@ -161,13 +161,13 @@
 
 | 课程设计要求 | 对应模块 | 仓库落点 | 验收关注点 |
 | --- | --- | --- | --- |
-| 边端实时检测 | 边端模块 | `backend/edge_api/runtime/`、`backend/shared/edge_cloud_system/domain/` | 摄像头采集正常，YOLO 推理可运行，任务可分流 |
+| 边端实时检测 | 边端模块 | `backend/edge_api/runtime/`、`backend/shared/domain/` | 摄像头采集正常，YOLO 推理可运行，任务可分流 |
 | 姿态动作识别 | 边端姿态模块 | `backend/edge_api/runtime/pose.py` | 能根据关键点给出基础姿态动作，低置信度时转云端复核 |
 | 云端智能体 | 云端模块 | `backend/cloud_api/cloud/`、`backend/cloud_api/routes/agent.py` | 可调用模型、搜索和知识库，输出完整分析结果 |
-| 网络通信 | 数据模型与 API | `backend/shared/edge_cloud_system/domain/models.py`、`backend/cloud_api/`、`backend/edge_api/` | JSON 结构统一，边云通信稳定 |
+| 网络通信 | 数据模型与 API | `backend/shared/domain/models.py`、`backend/cloud_api/`、`backend/edge_api/` | JSON 结构统一，边云通信稳定 |
 | 边端正式 UI | 边端前端模块 | `frontend/edge_frontend/` | 实时画面、姿态动作、规则和边端调度可展示 |
 | 可视化管理平台 | 云端前端模块 | `frontend/cloud_frontend/` | 状态、日志和智能体对话可展示 |
-| Docker 部署 | 部署与运维 | `Dockerfile`、`docker-compose.yml` | 云端和管理平台可独立启动 |
+| Docker 部署 | 部署与运维 | `Dockerfile.cloud`、`docker-compose.yml` | 云端和管理平台可独立启动 |
 
 ## 5. 非功能性目标
 

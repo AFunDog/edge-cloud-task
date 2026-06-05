@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from backend.shared.edge_cloud_system.domain.models import BoundingBox, Detection, DetectionResult, Keypoint
+from backend.shared.domain.models import BoundingBox, Detection, DetectionResult, Keypoint
 
 DEFAULT_CLASS_NAMES = ["others", "car", "van", "bus"]
 DEFAULT_KEYPOINT_NAMES = [

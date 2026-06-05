@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
 from backend.cloud_api.dependencies import get_agent
-from backend.shared.edge_cloud_system.core.state import runtime_state
-from backend.shared.edge_cloud_system.domain.models import AgentRequest, AgentResponse, TaskLog
+from backend.shared.core.state import runtime_state
+from backend.shared.domain.models import AgentRequest, AgentResponse, TaskLog
 
 router = APIRouter(prefix="/api/agent", tags=["cloud-agent"])
 

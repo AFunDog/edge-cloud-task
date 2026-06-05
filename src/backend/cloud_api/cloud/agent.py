@@ -1,7 +1,7 @@
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.search import SearchTool
-from backend.shared.edge_cloud_system.domain.models import AgentRequest, AgentResponse
+from backend.shared.domain.models import AgentRequest, AgentResponse
 
 
 class CloudAgent:

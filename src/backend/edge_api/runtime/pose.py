@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from backend.shared.edge_cloud_system.domain.models import Detection, PoseAction, PoseAnalysis
+from backend.shared.domain.models import Detection, PoseAction, PoseAnalysis
 
 
 @dataclass(frozen=True)

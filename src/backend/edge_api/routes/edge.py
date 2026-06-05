@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from backend.shared.edge_cloud_system.core.state import runtime_state
-from backend.shared.edge_cloud_system.domain.models import DetectionResult, EdgeStatus
+from backend.shared.core.state import runtime_state
+from backend.shared.domain.models import DetectionResult, EdgeStatus
 
 router = APIRouter(prefix="/api/edge", tags=["edge-ingest"])
 

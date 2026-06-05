@@ -11,7 +11,7 @@
 - `backend/edge_api/runtime/camera.py`：封装摄像头采集。安装 OpenCV 后从本地摄像头读取画面，读取失败直接报错。
 - `backend/edge_api/runtime/detector.py`：封装 YOLO 检测器。运行时只加载 `.onnx` 并使用 ONNX Runtime；模型缺失或加载失败直接报错，不做模拟降级。
 - `backend/edge_api/runtime/pose.py`：边端姿态动作判定器。基于人体关键点的几条规则识别站立、坐下、举手和蹲下等基础动作，无法稳定识别时标记为待云端复核。
-- `backend/shared/edge_cloud_system/domain/scheduler.py`：判断任务复杂度。常规目标检测、有人无人、车辆计数在边端完成；语义理解、跨模态检索、异常解释、报告生成转发云端。该调度规则放在领域层，避免云端 API 依赖边端模块。
+- `backend/shared/domain/scheduler.py`：判断任务复杂度。常规目标检测、有人无人、车辆计数在边端完成；语义理解、跨模态检索、异常解释、报告生成转发云端。该调度规则放在领域层，避免云端 API 依赖边端模块。
 - `backend/edge_api/runtime/client.py`：HTTP 客户端，负责把边端检测结果和复杂任务提交给云端。
 - `backend/edge_api/runtime/debug.py`：OpenCV 调试窗口，显示采集画面、检测框、显示 FPS、YOLO FPS、推理耗时、目标数量、后端和调度信息。
 - `backend/edge_api/runtime/runner.py`：命令行入口，完成摄像头采集、本地推理、调度、调试窗口显示和上报流程。

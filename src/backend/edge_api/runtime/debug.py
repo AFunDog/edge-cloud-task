@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.shared.edge_cloud_system.domain.models import DetectionResult, ScheduleDecision, TaskRequest
+from backend.shared.domain.models import DetectionResult, ScheduleDecision, TaskRequest
 
 WINDOW_NAME = "Edge Debug View"
 POSE_SKELETON = [(5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (0, 1), (0, 2), (1, 3), (2, 4), (0, 5), (0, 6)]

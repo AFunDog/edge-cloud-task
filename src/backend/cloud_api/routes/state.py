@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.shared.edge_cloud_system.core.state import runtime_state
+from backend.shared.core.state import runtime_state
 
 router = APIRouter(tags=["state"])
 

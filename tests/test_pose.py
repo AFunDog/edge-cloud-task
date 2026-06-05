@@ -1,5 +1,5 @@
 from backend.edge_api.runtime.pose import PoseAnalyzer
-from backend.shared.edge_cloud_system.domain.models import BoundingBox, Detection, Keypoint, PoseAction
+from backend.shared.domain.models import BoundingBox, Detection, Keypoint, PoseAction
 
 
 def _make_keypoints() -> list[Keypoint]:
