@@ -4,12 +4,23 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from edge_cloud_system.core.config import get_settings
-from edge_cloud_system.domain.models import AgentRequest, EdgeStatus, ExecutionTarget, TaskLog, TaskRequest
+from edge_cloud_system.domain.models import (
+    AgentRequest,
+    EdgeStatus,
+    ExecutionTarget,
+    PoseAction,
+    ScheduleDecision,
+    TaskComplexity,
+    TaskLog,
+    TaskRequest,
+)
 from edge_cloud_system.domain.scheduler import TaskScheduler
 from edge_cloud_system.edge.camera import CameraSource, encode_frame_to_jpeg_base64
 from edge_cloud_system.edge.debug import close_debug_window, render_debug_window
-from edge_cloud_system.edge.client import CloudClient
+from edge_cloud_system.edge.client import EdgeClient
 from edge_cloud_system.edge.detector import YoloDetector
+from edge_cloud_system.edge.pose import PoseAnalyzer
+from edge_cloud_system.cloud.client import CloudClient
 
 
 @dataclass
@@ -20,6 +31,14 @@ class CycleSnapshot:
     cloud_available: bool
     summary: str
     reason: str
+    cloud_fallback: bool = False
+
+
+def _build_mock_cloud_summary(task: str, frame_id: str, pose: object | None) -> str:
+    pose_action = getattr(getattr(pose, "action", None), "value", PoseAction.UNKNOWN.value)
+    if pose is not None and pose_action != PoseAction.UNKNOWN.value:
+        return f"云端模拟结果：{task} 已由边端识别为 {pose_action}，帧 {frame_id} 将在后续接入真实云端分析。"
+    return f"云端模拟结果：{task} 暂未获得稳定姿态判定，帧 {frame_id} 已标记为待云端复核。"
 
 
 def process_frame(
@@ -28,25 +47,45 @@ def process_frame(
     offline: bool,
     detector: YoloDetector,
     scheduler: TaskScheduler,
-    client: CloudClient,
+    edge_client: EdgeClient,
+    cloud_client: CloudClient,
     device_id: str,
     frame: object | None,
     publish: bool,
     cloud_available: bool | None = None,
     include_image: bool = True,
+    mock_cloud: bool = True,
 ) -> CycleSnapshot:
     if frame is None:
         raise RuntimeError("未读取到摄像头帧，请检查摄像头权限、索引和占用情况。")
     encoded_frame = encode_frame_to_jpeg_base64(frame) if include_image else None
     result = detector.detect(device_id, frame=frame, image_jpeg_base64=encoded_frame)
+    cloud_fallback = False
+    pose_summary: str | None = None
+    if "姿态" in task or "pose" in task.lower() or result.model_task == "pose":
+        pose_analyzer = PoseAnalyzer()
+        pose_decision = pose_analyzer.analyze(result.detections, (result.frame_width, result.frame_height))
+        result.pose = pose_decision.analysis
+        if pose_decision.analysis.action != PoseAction.UNKNOWN:
+            pose_summary = f"边端识别到姿态动作：{pose_decision.analysis.action.value}，置信度 {pose_decision.analysis.confidence:.2f}。"
+        else:
+            pose_summary = "边端未能稳定识别姿态动作，建议转云端复核。"
+        if pose_decision.analysis.needs_cloud:
+            cloud_fallback = True
     request = TaskRequest(task=task, device_id=device_id, frame_id=result.frame_id)
     decision = scheduler.decide(request)
-    summary = (
+    if cloud_fallback and decision.target == ExecutionTarget.EDGE:
+        decision = ScheduleDecision(
+            target=ExecutionTarget.CLOUD,
+            complexity=TaskComplexity.COMPLEX,
+            reason="边端姿态规则未能稳定匹配结果，转云端模拟复核。",
+        )
+    summary = pose_summary or (
         f"{detector.mode}/{detector.task} 检测到 {len(result.detections)} 个目标，"
         f"YOLO FPS {result.fps:.2f}，调度至 {decision.target.value}。"
     )
     if cloud_available is None:
-        cloud_available = client.is_available() if publish and not offline else False
+        cloud_available = cloud_client.is_available() if publish and not offline else False
 
     print(summary)
     print(decision.reason)
@@ -72,18 +111,10 @@ def process_frame(
         )
 
     if publish and not cloud_available:
+        if cloud_fallback and mock_cloud:
+            summary = _build_mock_cloud_summary(task, result.frame_id, result.pose)
         print("云端 API 当前不可用，边端将继续本地运行并跳过上报。")
-        return CycleSnapshot(
-            result=result,
-            request=request,
-            decision=decision,
-            cloud_available=cloud_available,
-            summary=summary,
-            reason=decision.reason,
-        )
-
-    if publish:
-        client.publish_status(
+        edge_client.publish_status(
             EdgeStatus(
                 device_id=device_id,
                 fps=result.fps,
@@ -92,15 +123,51 @@ def process_frame(
                 last_seen=datetime.now(timezone.utc),
             )
         )
-        client.publish_detection(result)
+        edge_client.publish_detection(result)
+        edge_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
+        return CycleSnapshot(
+            result=result,
+            request=request,
+            decision=decision,
+            cloud_available=cloud_available,
+            summary=summary,
+            reason=decision.reason,
+            cloud_fallback=cloud_fallback,
+        )
+
+    if publish:
+        edge_client.publish_status(
+            EdgeStatus(
+                device_id=device_id,
+                fps=result.fps,
+                cpu_percent=12.5,
+                memory_percent=33.0,
+                last_seen=datetime.now(timezone.utc),
+            )
+        )
+        edge_client.publish_detection(result)
+
+        cloud_client.publish_status(
+            EdgeStatus(
+                device_id=device_id,
+                fps=result.fps,
+                cpu_percent=12.5,
+                memory_percent=33.0,
+                last_seen=datetime.now(timezone.utc),
+            )
+        )
+        cloud_client.publish_detection(result)
 
         if decision.target == ExecutionTarget.CLOUD:
-            agent_result = client.ask_agent(
-                AgentRequest(question=task, device_id=device_id, context={"frame_id": result.frame_id})
-            )
-            summary = agent_result.answer
-
-    client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
+            if mock_cloud or cloud_fallback:
+                summary = _build_mock_cloud_summary(task, result.frame_id, result.pose)
+            else:
+                agent_result = cloud_client.ask_agent(
+                    AgentRequest(question=task, device_id=device_id, context={"frame_id": result.frame_id})
+                )
+                summary = agent_result.answer
+        edge_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
+        cloud_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
 
     return CycleSnapshot(
         result=result,
@@ -109,6 +176,7 @@ def process_frame(
         cloud_available=cloud_available,
         summary=summary,
         reason=decision.reason,
+        cloud_fallback=cloud_fallback,
     )
 
 
@@ -123,7 +191,9 @@ def main() -> None:
     parser.add_argument("--interval", type=float, default=None, help="循环采集间隔秒数")
     parser.add_argument("--debug-window", action="store_true", help="打开调试窗口显示画面、数据和标注框")
     parser.add_argument("--skip-frames", type=int, default=None, help="每 N 帧执行一次 YOLO 推理，其余帧复用上次检测框")
+    parser.add_argument("--real-cloud", action="store_true", help="启用真实云端调用，默认使用模拟结果")
     args = parser.parse_args()
+    mock_cloud = not args.real_cloud
 
     settings = get_settings()
     detector = YoloDetector(
@@ -137,7 +207,8 @@ def main() -> None:
     camera_index = settings.edge_camera_index if args.camera_index is None else args.camera_index
     camera_width = settings.edge_camera_width if args.camera_width is None else args.camera_width
     camera_height = settings.edge_camera_height if args.camera_height is None else args.camera_height
-    client = CloudClient(settings.api_base_url)
+    edge_client = EdgeClient(settings.edge_api_base_url)
+    cloud_client = CloudClient(settings.cloud_api_base_url)
     interval = settings.edge_loop_interval_seconds if args.interval is None else args.interval
     skip_frames = max(1, settings.edge_skip_frames if args.skip_frames is None else args.skip_frames)
     cloud_cache_available = False
@@ -154,7 +225,7 @@ def main() -> None:
         if args.offline:
             return False
         if now - cloud_cache_checked_at > 5.0:
-            cloud_cache_available = client.is_available()
+            cloud_cache_available = cloud_client.is_available()
             cloud_cache_checked_at = now
         return cloud_cache_available
 
@@ -194,12 +265,14 @@ def main() -> None:
                                 offline=args.offline,
                                 detector=detector,
                                 scheduler=scheduler,
-                                client=client,
+                                edge_client=edge_client,
+                                cloud_client=cloud_client,
                                 device_id=settings.edge_device_id,
                                 frame=frame,
                                 publish=False,
                                 cloud_available=False,
                                 include_image=False,
+                                mock_cloud=mock_cloud,
                             )
                         display_fps = sum(fps_samples) / len(fps_samples) if fps_samples else 0.0
                         snapshot = last_snapshot
@@ -228,12 +301,14 @@ def main() -> None:
                             offline=args.offline,
                             detector=detector,
                             scheduler=scheduler,
-                            client=client,
+                            edge_client=edge_client,
+                            cloud_client=cloud_client,
                             device_id=settings.edge_device_id,
                             frame=frame,
                             publish=True,
                             cloud_available=get_cloud_available(),
                             include_image=True,
+                            mock_cloud=mock_cloud,
                         )
                     if args.once:
                         break

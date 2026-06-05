@@ -5,10 +5,18 @@ export interface BoundingBox {
   y2: number
 }
 
+export interface Keypoint {
+  x: number
+  y: number
+  confidence: number
+  name?: string | null
+}
+
 export interface Detection {
   label: string
   confidence: number
   box: BoundingBox
+  keypoints: Keypoint[]
 }
 
 export interface PoseAnalysis {
@@ -27,6 +35,7 @@ export interface DetectionResult {
   inference_ms: number
   backend: string
   model_path: string
+  model_task: string
   frame_width: number
   frame_height: number
   image_jpeg_base64?: string | null
@@ -59,19 +68,6 @@ export interface SystemState {
   edge_status: EdgeStatus[]
   recent_detections: DetectionResult[]
   task_logs: TaskLog[]
-}
-
-export interface AgentRequest {
-  question: string
-  device_id?: string
-  context: Record<string, unknown>
-}
-
-export interface AgentResponse {
-  answer: string
-  used_search: boolean
-  used_knowledge: boolean
-  traces: string[]
 }
 
 export interface TaskRequest {

@@ -15,6 +15,14 @@ class TaskComplexity(str, Enum):
     COMPLEX = "complex"
 
 
+class PoseAction(str, Enum):
+    STANDING = "standing"
+    SITTING = "sitting"
+    RAISING_HAND = "raising_hand"
+    CROUCHING = "crouching"
+    UNKNOWN = "unknown"
+
+
 class BoundingBox(BaseModel):
     x1: float
     y1: float
@@ -36,6 +44,15 @@ class Detection(BaseModel):
     keypoints: list[Keypoint] = Field(default_factory=list)
 
 
+class PoseAnalysis(BaseModel):
+    action: PoseAction = PoseAction.UNKNOWN
+    confidence: float = Field(ge=0, le=1)
+    needs_cloud: bool = False
+    matched_rule: str = ""
+    reason: str = ""
+    evidence: list[str] = Field(default_factory=list)
+
+
 class DetectionResult(BaseModel):
     device_id: str
     frame_id: str = Field(default_factory=lambda: uuid4().hex)
@@ -48,6 +65,7 @@ class DetectionResult(BaseModel):
     frame_height: int = 360
     image_jpeg_base64: str | None = None
     detections: list[Detection] = Field(default_factory=list)
+    pose: PoseAnalysis | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

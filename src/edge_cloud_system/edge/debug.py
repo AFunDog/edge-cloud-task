@@ -66,6 +66,11 @@ def render_debug_window(
             _draw_label(canvas, label, (x1, max(24, y1 - 8)), text_color, shadow_color, box_color)
             if detection.keypoints:
                 _draw_keypoints(canvas, detection.keypoints, text_color)
+        if result.pose is not None:
+            pose_text = f"Pose: {result.pose.action.value} {result.pose.confidence:.2f}"
+            _draw_status_text(canvas, pose_text, (10, 126), text_color, shadow_color)
+            if result.pose.needs_cloud:
+                _draw_status_text(canvas, "Cloud: mock/queue", (10, 158), text_color, shadow_color)
 
     fps_value = display_fps if display_fps is not None else (result.fps if result is not None else 0.0)
     object_count = len(result.detections) if result is not None else 0

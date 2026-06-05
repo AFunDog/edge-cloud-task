@@ -50,10 +50,10 @@ onBeforeUnmount(() => {
 
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Edge / Cloud / Control</p>
-        <h1>端-边-云协同控制台</h1>
+        <p class="eyebrow">Cloud / Orchestration / Insight</p>
+        <h1>云端协同控制台</h1>
         <p class="lede">
-          前端只展示系统状态和触发调度；边端独立负责本机摄像头采集与 YOLO 检测，云端独立负责 Agent、搜索和知识库能力。
+          这是云端视角的正式控制台，负责展示系统状态、智能体对话、任务日志和云端调度结果；边端的实时姿态工作台独立运行。
         </p>
       </div>
       <HeaderMetrics :error="error" :edge-status="edgeStatus" :recent-detections="recentDetections" />

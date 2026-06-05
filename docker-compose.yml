@@ -1,7 +1,7 @@
 services:
   cloud:
-    build: .
-    command: uvicorn edge_cloud_system.api.main:app --host 0.0.0.0 --port 8000
+    build: . 
+    command: uvicorn edge_cloud_system.cloud_server:app --host 0.0.0.0 --port 8000
     env_file:
       - path: .env
         required: false
@@ -10,7 +10,18 @@ services:
     volumes:
       - ./data:/app/data
 
-  web:
+  edge:
+    build: .
+    command: uvicorn edge_cloud_system.edge_server:app --host 0.0.0.0 --port 8001
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+
+  cloud-web:
     build:
       context: ./src/frontend
     ports:
@@ -18,22 +29,32 @@ services:
     depends_on:
       - cloud
 
-  edge:
+  edge-web:
+    build:
+      context: ./src/edge_frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - edge
+
+  edge-runner:
     build:
       context: .
       dockerfile: Dockerfile.edge
-    command: python -m edge_cloud_system.edge.runner --task "车辆计数"
+    command: python -m edge_cloud_system.edge.runner --task "姿态识别"
     env_file:
       - path: .env
         required: false
     environment:
-      API_BASE_URL: http://cloud:8000
+      EDGE_API_BASE_URL: http://edge:8001
+      CLOUD_API_BASE_URL: http://cloud:8000
       PUBLIC_DIR: /app/public
     volumes:
       - ./public:/app/public:ro
     devices:
       - "/dev/video0:/dev/video0"
     depends_on:
+      - edge
       - cloud
     profiles:
       - edge
