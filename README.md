@@ -6,15 +6,12 @@
 
 ```text
 src/edge_cloud_system/
-  api/            云端兼容接口
-  cloud/          LLM、搜索、知识库与智能体编排
   core/           配置与共享状态
   domain/         统一数据模型
-  edge/           摄像头采集、YOLO 检测、姿态规则、边端通信
-  edge_server.py  边端 FastAPI 入口
-  cloud_server.py 云端 FastAPI 入口
-src/frontend/     云端 Vite + Vue3 控制台
-src/edge_frontend/边端 Vite + Vue3 工作台
+src/cloud_api/      云端 FastAPI 程序
+src/edge_api/       边端 FastAPI 程序
+src/cloud_frontend/ 云端 Vite + Vue3 控制台
+src/edge_frontend/  边端 Vite + Vue3 工作台
 docs/             架构与实验说明
 tests/            核心逻辑测试
 ```
@@ -29,19 +26,19 @@ tests/            核心逻辑测试
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\pip install -e .[test]
-.\.venv\Scripts\uvicorn edge_cloud_system.cloud_server:app --reload
+.\.venv\Scripts\uvicorn cloud_api.main:app --reload
 ```
 
 另开一个终端启动边端服务：
 
 ```powershell
-.\.venv\Scripts\uvicorn edge_cloud_system.edge_server:app --reload --port 8001
+.\.venv\Scripts\uvicorn edge_api.main:app --reload --port 8001
 ```
 
 另开一个终端启动云端前端开发服务器：
 
 ```powershell
-cd src/frontend
+cd src/cloud_frontend
 npm install
 npm run dev
 ```
@@ -58,7 +55,7 @@ npm run dev
 
 ```powershell
 .\.venv\Scripts\pip install -e .[yolo]
-.\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "姿态识别" --once
+.\.venv\Scripts\python -m edge_api.runtime.runner --task "姿态识别" --once
 ```
 
 检测器只加载 `.onnx` 模型并使用 ONNX Runtime，避免额外的导出依赖和运行时分支。
@@ -66,7 +63,7 @@ npm run dev
 如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
 
 ```powershell
-.\.venv\Scripts\python -m edge_cloud_system.edge.runner --task "姿态识别" --debug-window
+.\.venv\Scripts\python -m edge_api.runtime.runner --task "姿态识别" --debug-window
 ```
 
 边端正式 UI 会显示检测框、类别、置信度、显示 FPS、YOLO FPS、推理耗时、目标数、后端、姿态动作和调度信息；按 `q` 或 `Esc` 退出调试窗口时不会影响后台采集。

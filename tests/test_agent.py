@@ -1,7 +1,7 @@
-from edge_cloud_system.cloud.agent import CloudAgent
-from edge_cloud_system.cloud.knowledge import KnowledgeBase
-from edge_cloud_system.cloud.llm import LLMClient
-from edge_cloud_system.cloud.search import SearchTool
+from cloud_api.cloud.agent import CloudAgent
+from cloud_api.cloud.knowledge import KnowledgeBase
+from cloud_api.cloud.llm import LLMClient
+from cloud_api.cloud.search import SearchTool
 from edge_cloud_system.domain.models import AgentRequest
 
 

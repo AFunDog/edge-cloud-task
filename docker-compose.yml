@@ -1,7 +1,7 @@
 services:
   cloud:
-    build: . 
-    command: uvicorn edge_cloud_system.cloud_server:app --host 0.0.0.0 --port 8000
+    build: .
+    command: uvicorn cloud_api.main:app --host 0.0.0.0 --port 8000
     env_file:
       - path: .env
         required: false
@@ -12,7 +12,7 @@ services:
 
   edge:
     build: .
-    command: uvicorn edge_cloud_system.edge_server:app --host 0.0.0.0 --port 8001
+    command: uvicorn edge_api.main:app --host 0.0.0.0 --port 8001
     env_file:
       - path: .env
         required: false
@@ -23,7 +23,7 @@ services:
 
   cloud-web:
     build:
-      context: ./src/frontend
+      context: ./src/cloud_frontend
     ports:
       - "8080:80"
     depends_on:

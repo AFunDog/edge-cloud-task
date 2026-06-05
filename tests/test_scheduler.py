@@ -1,5 +1,5 @@
 from edge_cloud_system.domain.models import ExecutionTarget, TaskRequest
-from edge_cloud_system.edge.scheduler import TaskScheduler
+from edge_cloud_system.domain.scheduler import TaskScheduler
 
 
 def test_simple_detection_stays_on_edge() -> None:

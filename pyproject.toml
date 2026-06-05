@@ -21,8 +21,9 @@ test = [
 ]
 
 [project.scripts]
-edge-cloud-api = "edge_cloud_system.api.main:run"
-edge-cloud-edge = "edge_cloud_system.edge.runner:main"
+cloud-api = "cloud_api.main:run"
+edge-api = "edge_api.main:run"
+edge-run = "edge_api.runtime.runner:main"
 
 [build-system]
 requires = ["setuptools>=69.5.1"]
