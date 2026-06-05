@@ -11,7 +11,7 @@
 3. 在云端实现具备大模型调用、联网搜索和本地知识库能力的智能体。
 4. 在管理平台提供可视化监控、任务日志和智能体对话能力。
 
-结合当前仓库，系统已经按 `src/edge_cloud_system/` 作为共享层、`src/edge_api/` 和 `src/cloud_api/` 作为两套独立服务、`src/edge_frontend/` 和 `src/cloud_frontend/` 作为两套前端的结构拆分，适合直接按模块推进实现。
+结合当前仓库，系统已经按 `src/backend/` 作为后端主目录、`src/backend/shared/` 作为共享层、`src/backend/edge_api/` 和 `src/backend/cloud_api/` 作为两套独立服务、`src/frontend/edge_frontend/` 和 `src/frontend/cloud_frontend/` 作为两套前端的结构拆分，适合直接按模块推进实现。
 
 ## 2. 分阶段实施计划
 
@@ -85,14 +85,14 @@
 
 对应仓库位置：
 
-- `src/edge_api/runtime/camera.py`：摄像头采集。
-- `src/edge_api/runtime/detector.py`：YOLO 检测。
-- `src/edge_api/runtime/pose.py`：基于关键点的姿态动作规则识别。
-- `src/edge_cloud_system/domain/scheduler.py`：任务复杂度判断与分流。
-- `src/edge_api/runtime/client.py`：边云通信客户端。
-- `src/edge_api/runtime/debug.py`：调试窗口和运行信息展示。
-- `src/edge_api/runtime/runner.py`：边端命令行入口。
-- `src/edge_frontend/`：边端正式 UI。
+- `src/backend/edge_api/runtime/camera.py`：摄像头采集。
+- `src/backend/edge_api/runtime/detector.py`：YOLO 检测。
+- `src/backend/edge_api/runtime/pose.py`：基于关键点的姿态动作规则识别。
+- `src/backend/shared/edge_cloud_system/domain/scheduler.py`：任务复杂度判断与分流。
+- `src/backend/edge_api/runtime/client.py`：边云通信客户端。
+- `src/backend/edge_api/runtime/debug.py`：调试窗口和运行信息展示。
+- `src/backend/edge_api/runtime/runner.py`：边端命令行入口。
+- `src/frontend/edge_frontend/`：边端正式 UI。
 
 职责说明：
 
@@ -108,13 +108,13 @@
 
 对应仓库位置：
 
-- `src/cloud_api/cloud/agent.py`：智能体编排入口。
-- `src/cloud_api/cloud/llm.py`：大模型客户端抽象。
-- `src/cloud_api/cloud/search.py`：联网搜索接口。
-- `src/cloud_api/cloud/knowledge.py`：本地知识库检索。
-- `src/cloud_api/routes/agent.py`：智能体相关 API。
-- `src/cloud_api/routes/tasks.py`：任务处理相关 API。
-- `src/cloud_frontend/`：云端前端控制台。
+- `src/backend/cloud_api/cloud/agent.py`：智能体编排入口。
+- `src/backend/cloud_api/cloud/llm.py`：大模型客户端抽象。
+- `src/backend/cloud_api/cloud/search.py`：联网搜索接口。
+- `src/backend/cloud_api/cloud/knowledge.py`：本地知识库检索。
+- `src/backend/cloud_api/routes/agent.py`：智能体相关 API。
+- `src/backend/cloud_api/routes/tasks.py`：任务处理相关 API。
+- `src/frontend/cloud_frontend/`：云端前端控制台。
 
 职责说明：
 
@@ -128,10 +128,10 @@
 
 对应仓库位置：
 
-- `src/edge_cloud_system/domain/models.py`：请求、响应和共享数据模型。
-- `src/cloud_api/dependencies.py`：云端服务依赖装配。
-- `src/edge_cloud_system/core/config.py`：配置读取。
-- `src/edge_cloud_system/core/state.py`：共享运行状态。
+- `src/backend/shared/edge_cloud_system/domain/models.py`：请求、响应和共享数据模型。
+- `src/backend/cloud_api/dependencies.py`：云端服务依赖装配。
+- `src/backend/shared/edge_cloud_system/core/config.py`：配置读取。
+- `src/backend/shared/edge_cloud_system/core/state.py`：共享运行状态。
 
 职责说明：
 
@@ -145,11 +145,11 @@
 
 对应仓库位置：
 
-- `src/cloud_frontend/src/components/StatusPanel.vue`：系统状态。
-- `src/cloud_frontend/src/components/DetectionPanel.vue`：检测结果。
-- `src/cloud_frontend/src/components/TaskLogPanel.vue`：任务日志。
-- `src/cloud_frontend/src/components/AgentPanel.vue`：智能体对话。
-- `src/cloud_frontend/src/api.ts`：前端 API 调用。
+- `src/frontend/cloud_frontend/src/components/StatusPanel.vue`：系统状态。
+- `src/frontend/cloud_frontend/src/components/DetectionPanel.vue`：检测结果。
+- `src/frontend/cloud_frontend/src/components/TaskLogPanel.vue`：任务日志。
+- `src/frontend/cloud_frontend/src/components/AgentPanel.vue`：智能体对话。
+- `src/frontend/cloud_frontend/src/api.ts`：前端 API 调用。
 
 职责说明：
 
@@ -161,12 +161,12 @@
 
 | 课程设计要求 | 对应模块 | 仓库落点 | 验收关注点 |
 | --- | --- | --- | --- |
-| 边端实时检测 | 边端模块 | `edge_api/runtime/`、`domain/` | 摄像头采集正常，YOLO 推理可运行，任务可分流 |
-| 姿态动作识别 | 边端姿态模块 | `edge_api/runtime/pose.py` | 能根据关键点给出基础姿态动作，低置信度时转云端复核 |
-| 云端智能体 | 云端模块 | `cloud_api/cloud/`、`cloud_api/routes/agent.py` | 可调用模型、搜索和知识库，输出完整分析结果 |
-| 网络通信 | 数据模型与 API | `domain/models.py`、`cloud_api/`、`edge_api/` | JSON 结构统一，边云通信稳定 |
-| 边端正式 UI | 边端前端模块 | `edge_frontend/` | 实时画面、姿态动作、规则和边端调度可展示 |
-| 可视化管理平台 | 云端前端模块 | `cloud_frontend/` | 状态、日志和智能体对话可展示 |
+| 边端实时检测 | 边端模块 | `backend/edge_api/runtime/`、`backend/shared/edge_cloud_system/domain/` | 摄像头采集正常，YOLO 推理可运行，任务可分流 |
+| 姿态动作识别 | 边端姿态模块 | `backend/edge_api/runtime/pose.py` | 能根据关键点给出基础姿态动作，低置信度时转云端复核 |
+| 云端智能体 | 云端模块 | `backend/cloud_api/cloud/`、`backend/cloud_api/routes/agent.py` | 可调用模型、搜索和知识库，输出完整分析结果 |
+| 网络通信 | 数据模型与 API | `backend/shared/edge_cloud_system/domain/models.py`、`backend/cloud_api/`、`backend/edge_api/` | JSON 结构统一，边云通信稳定 |
+| 边端正式 UI | 边端前端模块 | `frontend/edge_frontend/` | 实时画面、姿态动作、规则和边端调度可展示 |
+| 可视化管理平台 | 云端前端模块 | `frontend/cloud_frontend/` | 状态、日志和智能体对话可展示 |
 | Docker 部署 | 部署与运维 | `Dockerfile`、`docker-compose.yml` | 云端和管理平台可独立启动 |
 
 ## 5. 非功能性目标

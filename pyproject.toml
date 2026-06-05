@@ -21,9 +21,9 @@ test = [
 ]
 
 [project.scripts]
-cloud-api = "cloud_api.main:run"
-edge-api = "edge_api.main:run"
-edge-run = "edge_api.runtime.runner:main"
+cloud-api = "backend.cloud_api.main:run"
+edge-api = "backend.edge_api.main:run"
+edge-run = "backend.edge_api.runtime.runner:main"
 
 [build-system]
 requires = ["setuptools>=69.5.1"]

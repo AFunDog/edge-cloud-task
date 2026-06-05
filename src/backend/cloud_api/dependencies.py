@@ -1,10 +1,10 @@
 from functools import lru_cache
 
-from edge_cloud_system.core.config import get_settings
-from cloud_api.cloud.agent import CloudAgent
-from cloud_api.cloud.knowledge import KnowledgeBase
-from cloud_api.cloud.llm import LLMClient
-from cloud_api.cloud.search import SearchTool
+from backend.cloud_api.cloud.agent import CloudAgent
+from backend.cloud_api.cloud.knowledge import KnowledgeBase
+from backend.cloud_api.cloud.llm import LLMClient
+from backend.cloud_api.cloud.search import SearchTool
+from backend.shared.edge_cloud_system.core.config import get_settings
 
 
 @lru_cache

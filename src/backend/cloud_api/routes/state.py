@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from edge_cloud_system.core.state import runtime_state
+from backend.shared.edge_cloud_system.core.state import runtime_state
 
 router = APIRouter(tags=["state"])
 
@@ -13,4 +13,3 @@ def health() -> dict:
 @router.get("/api/state")
 def state() -> dict:
     return runtime_state.snapshot()
-

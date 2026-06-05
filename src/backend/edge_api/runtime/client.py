@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from edge_cloud_system.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, TaskLog
+from backend.shared.edge_cloud_system.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, TaskLog
 
 
 class EdgeClient:

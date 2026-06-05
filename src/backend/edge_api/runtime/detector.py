@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from edge_cloud_system.domain.models import BoundingBox, Detection, DetectionResult, Keypoint
+from backend.shared.edge_cloud_system.domain.models import BoundingBox, Detection, DetectionResult, Keypoint
 
 DEFAULT_CLASS_NAMES = ["others", "car", "van", "bus"]
 DEFAULT_KEYPOINT_NAMES = [
@@ -196,4 +196,3 @@ class YoloDetector:
         if isinstance(parsed, list):
             return [str(item) for item in parsed] or fallback
         return fallback
-

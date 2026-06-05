@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-from edge_cloud_system.core.state import runtime_state
-from edge_cloud_system.domain.models import TaskLog, TaskRequest
-from edge_cloud_system.domain.scheduler import TaskScheduler
+from backend.shared.edge_cloud_system.core.state import runtime_state
+from backend.shared.edge_cloud_system.domain.models import TaskLog, TaskRequest
+from backend.shared.edge_cloud_system.domain.scheduler import TaskScheduler
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -16,4 +16,3 @@ def schedule_task(request: TaskRequest):
 def create_task_log(log: TaskLog) -> dict:
     runtime_state.add_task_log(log)
     return {"ok": True, "task_id": log.task_id}
-

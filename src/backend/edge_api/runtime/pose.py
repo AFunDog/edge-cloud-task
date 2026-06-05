@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from edge_cloud_system.domain.models import Detection, PoseAction, PoseAnalysis
+from backend.shared.edge_cloud_system.domain.models import Detection, PoseAction, PoseAnalysis
 
 
 @dataclass(frozen=True)
@@ -164,4 +164,3 @@ class PoseAnalyzer:
         if not values:
             return None
         return float(sum(item.x for item in values) / len(values)), float(sum(item.y for item in values) / len(values))
-

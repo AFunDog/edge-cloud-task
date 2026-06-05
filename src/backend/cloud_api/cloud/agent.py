@@ -1,7 +1,7 @@
-from cloud_api.cloud.knowledge import KnowledgeBase
-from cloud_api.cloud.llm import LLMClient
-from cloud_api.cloud.search import SearchTool
-from edge_cloud_system.domain.models import AgentRequest, AgentResponse
+from backend.cloud_api.cloud.knowledge import KnowledgeBase
+from backend.cloud_api.cloud.llm import LLMClient
+from backend.cloud_api.cloud.search import SearchTool
+from backend.shared.edge_cloud_system.domain.models import AgentRequest, AgentResponse
 
 
 class CloudAgent:
@@ -41,4 +41,3 @@ class CloudAgent:
                 f"搜索：{search_hits}",
             ]
         )
-

@@ -5,14 +5,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from edge_cloud_system.core.config import get_settings
-from edge_cloud_system.domain.models import AgentRequest, EdgeStatus, ExecutionTarget, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
-from edge_cloud_system.domain.scheduler import TaskScheduler
-from edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
-from edge_api.runtime.client import CloudClient, EdgeClient
-from edge_api.runtime.debug import close_debug_window, render_debug_window
-from edge_api.runtime.detector import YoloDetector
-from edge_api.runtime.pose import PoseAnalyzer
+from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
+from backend.edge_api.runtime.client import CloudClient, EdgeClient
+from backend.edge_api.runtime.debug import close_debug_window, render_debug_window
+from backend.edge_api.runtime.detector import YoloDetector
+from backend.edge_api.runtime.pose import PoseAnalyzer
+from backend.shared.edge_cloud_system.core.config import get_settings
+from backend.shared.edge_cloud_system.domain.models import AgentRequest, EdgeStatus, ExecutionTarget, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
+from backend.shared.edge_cloud_system.domain.scheduler import TaskScheduler
 
 
 @dataclass

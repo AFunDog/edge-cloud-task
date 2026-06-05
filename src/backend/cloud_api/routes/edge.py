@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from edge_cloud_system.core.state import runtime_state
-from edge_cloud_system.domain.models import DetectionResult, EdgeStatus
+from backend.shared.edge_cloud_system.core.state import runtime_state
+from backend.shared.edge_cloud_system.domain.models import DetectionResult, EdgeStatus
 
 router = APIRouter(prefix="/api/edge", tags=["edge-ingest"])
 
@@ -16,4 +16,3 @@ def update_edge_status(status: EdgeStatus) -> dict:
 def create_detection(result: DetectionResult) -> dict:
     runtime_state.add_detection(result)
     return {"ok": True, "frame_id": result.frame_id}
-
