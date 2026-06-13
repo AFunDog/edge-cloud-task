@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchState, scheduleTask } from './api'
-import type { Detection, DetectionResult, SystemState, TaskLog } from './types'
+import { connectStream, fetchState, scheduleTask } from './api'
+import type { Detection, DetectionResult, EdgeStatus, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 
 const state = ref<SystemState | null>(null)
 const loading = ref(true)
 const error = ref('')
+const connected = ref(false)
 const taskText = ref('姿态识别')
 const deviceId = ref('edge-camera-01')
 const scheduleBusy = ref(false)
@@ -15,9 +16,51 @@ const scheduleResult = ref<{
   complexity: string
   reason: string
 } | null>(null)
-let timer: number | null = null
 
-async function loadState(): Promise<void> {
+let streamControl: { close: () => void } | null = null
+
+function applySnapshot(snapshot: SystemState): void {
+  state.value = snapshot
+  loading.value = false
+  error.value = ''
+}
+
+function applyDetection(detection: DetectionResult): void {
+  if (!state.value) {
+    state.value = {
+      server_time: detection.created_at,
+      edge_status: [],
+      recent_detections: [detection],
+      task_logs: [],
+    }
+    loading.value = false
+    return
+  }
+  state.value = {
+    ...state.value,
+    server_time: detection.created_at,
+    recent_detections: [detection, ...state.value.recent_detections.slice(0, 49)],
+  }
+}
+
+function applyEdgeStatus(status: EdgeStatus): void {
+  if (!state.value) return
+  const others = state.value.edge_status.filter((s) => s.device_id !== status.device_id)
+  state.value = {
+    ...state.value,
+    edge_status: [status, ...others],
+  }
+}
+
+function applyTaskLog(log: TaskLog): void {
+  if (!state.value) return
+  state.value = {
+    ...state.value,
+    task_logs: [log, ...state.value.task_logs.slice(0, 199)],
+  }
+}
+
+async function loadInitialState(): Promise<void> {
   try {
     error.value = ''
     state.value = await fetchState()
@@ -26,6 +69,25 @@ async function loadState(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+function openStream(): void {
+  streamControl = connectStream({
+    onSnapshot: applySnapshot,
+    onDetection: applyDetection,
+    onStatus: applyEdgeStatus,
+    onTaskLog: applyTaskLog,
+    onError: (msg) => {
+      error.value = msg
+    },
+    onOpen: () => {
+      connected.value = true
+      loading.value = false
+    },
+    onClose: () => {
+      connected.value = false
+    },
+  })
 }
 
 async function submitSchedule(): Promise<void> {
@@ -45,14 +107,13 @@ async function submitSchedule(): Promise<void> {
 }
 
 onMounted(async () => {
-  await loadState()
-  timer = window.setInterval(loadState, 2500)
+  await loadInitialState()
+  openStream()
 })
 
 onBeforeUnmount(() => {
-  if (timer !== null) {
-    window.clearInterval(timer)
-  }
+  streamControl?.close()
+  streamControl = null
 })
 
 const edgeStatus = computed(() => state.value?.edge_status[0] ?? null)
@@ -121,8 +182,8 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
           <strong>{{ actionLabel(activeAction) }}</strong>
         </article>
         <article class="strip-card">
-          <span>Cloud handoff</span>
-          <strong>{{ pose?.needs_cloud ? 'PENDING' : 'LOCAL' }}</strong>
+          <span>Stream</span>
+          <strong :class="connected ? 'ok' : 'warn'">{{ connected ? 'LIVE' : '--' }}</strong>
         </article>
       </div>
     </header>
@@ -134,7 +195,10 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
             <p class="kicker">Live Frame</p>
             <h2>实时画面与姿态框</h2>
           </div>
-          <div class="panel-meta">{{ formatTime(state?.server_time) }}</div>
+          <div class="panel-meta">
+            <span v-if="connected" class="live-dot"></span>
+            {{ connected ? 'WebSocket 实时推送' : '等待连接...' }}
+          </div>
         </div>
 
         <div class="frame">
@@ -266,7 +330,10 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
             <p class="kicker">Edge Timeline</p>
             <h2>边端状态与日志列表</h2>
           </div>
-          <div class="panel-meta">Server time: {{ formatTime(state?.server_time) }}</div>
+          <div class="panel-meta">
+            <span v-if="connected" class="live-dot"></span>
+            Server time: {{ formatTime(state?.server_time) }}
+          </div>
         </div>
 
         <div class="timeline">
