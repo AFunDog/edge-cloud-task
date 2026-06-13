@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { connectStream, fetchState, scheduleTask } from './api'
-import type { Detection, DetectionResult, EdgeStatus, FrameData, SystemState, TaskLog } from './types'
+import { connectStream, connectWebRTC, fetchState, scheduleTask } from './api'
+import type { Detection, DetectionResult, EdgeStatus, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 
 const state = ref<SystemState | null>(null)
 const loading = ref(true)
 const error = ref('')
 const connected = ref(false)
-const latestFrameJpeg = ref<string | null>(null)
-const latestFrameWidth = ref(640)
-const latestFrameHeight = ref(360)
+const rtcConnected = ref(false)
+const videoWidth = ref(640)
+const videoHeight = ref(360)
 const taskText = ref('姿态识别')
 const deviceId = ref('edge-camera-01')
 const scheduleBusy = ref(false)
@@ -21,17 +21,15 @@ const scheduleResult = ref<{
 } | null>(null)
 
 let streamControl: { close: () => void } | null = null
+let rtcControl: { close: () => void } | null = null
+const videoRef = ref<HTMLVideoElement | null>(null)
+
+// ---------- 回调 ----------
 
 function applySnapshot(snapshot: SystemState): void {
   state.value = snapshot
   loading.value = false
   error.value = ''
-}
-
-function applyFrame(frame: FrameData): void {
-  latestFrameJpeg.value = frame.image_jpeg_base64
-  latestFrameWidth.value = frame.width
-  latestFrameHeight.value = frame.height
 }
 
 function applyDetection(detection: DetectionResult): void {
@@ -55,19 +53,15 @@ function applyDetection(detection: DetectionResult): void {
 function applyEdgeStatus(status: EdgeStatus): void {
   if (!state.value) return
   const others = state.value.edge_status.filter((s) => s.device_id !== status.device_id)
-  state.value = {
-    ...state.value,
-    edge_status: [status, ...others],
-  }
+  state.value = { ...state.value, edge_status: [status, ...others] }
 }
 
 function applyTaskLog(log: TaskLog): void {
   if (!state.value) return
-  state.value = {
-    ...state.value,
-    task_logs: [log, ...state.value.task_logs.slice(0, 199)],
-  }
+  state.value = { ...state.value, task_logs: [log, ...state.value.task_logs.slice(0, 199)] }
 }
+
+// ---------- 初始化 ----------
 
 async function loadInitialState(): Promise<void> {
   try {
@@ -83,21 +77,71 @@ async function loadInitialState(): Promise<void> {
 function openStream(): void {
   streamControl = connectStream({
     onSnapshot: applySnapshot,
-    onFrame: applyFrame,
     onDetection: applyDetection,
     onStatus: applyEdgeStatus,
     onTaskLog: applyTaskLog,
-    onError: (msg) => {
-      error.value = msg
-    },
-    onOpen: () => {
-      connected.value = true
-      loading.value = false
-    },
-    onClose: () => {
-      connected.value = false
-    },
+    onError: (msg) => { error.value = msg },
+    onOpen: () => { connected.value = true; loading.value = false },
+    onClose: () => { connected.value = false },
   })
+}
+
+async function openWebRTC(): Promise<void> {
+  if (!videoRef.value) return
+  try {
+    rtcControl = await connectWebRTC(
+      videoRef.value,
+      (w, h) => { videoWidth.value = w; videoHeight.value = h },
+    )
+    rtcConnected.value = true
+  } catch (exc) {
+    console.error('[RTC] 连接失败', exc)
+  }
+}
+
+onMounted(async () => {
+  await loadInitialState()
+  openStream()
+  await openWebRTC()
+})
+
+onBeforeUnmount(() => {
+  streamControl?.close()
+  streamControl = null
+  rtcControl?.close()
+  rtcControl = null
+})
+
+// ---------- 计算属性 ----------
+
+const edgeStatus = computed(() => state.value?.edge_status[0] ?? null)
+const latestDetection = computed(() => state.value?.recent_detections[0] ?? null)
+const taskLogs = computed(() => state.value?.task_logs ?? [])
+const pose = computed(() => latestDetection.value?.pose ?? null)
+const detections = computed(() => latestDetection.value?.detections ?? [])
+const activeAction = computed(() => pose.value?.action ?? 'unknown')
+const cloudHint = computed(() =>
+  pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
+)
+
+function boxStyle(item: Detection, _current: DetectionResult | null): Record<string, string> {
+  return {
+    left: `${Math.min((item.box.x1 / videoWidth.value) * 100, 96)}%`,
+    top: `${Math.min((item.box.y1 / videoHeight.value) * 100, 92)}%`,
+    width: `${Math.max(((item.box.x2 - item.box.x1) / videoWidth.value) * 100, 4)}%`,
+    height: `${Math.max(((item.box.y2 - item.box.y1) / videoHeight.value) * 100, 6)}%`,
+  }
+}
+
+function actionLabel(value: string): string {
+  const map: Record<string, string> = {
+    standing: '站立', sitting: '坐下', raising_hand: '举手', crouching: '蹲下', unknown: '待复核',
+  }
+  return map[value] ?? value
+}
+
+function latestLog(logs: TaskLog[]): TaskLog | null {
+  return logs[0] ?? null
 }
 
 async function submitSchedule(): Promise<void> {
@@ -114,53 +158,6 @@ async function submitSchedule(): Promise<void> {
   } finally {
     scheduleBusy.value = false
   }
-}
-
-onMounted(async () => {
-  await loadInitialState()
-  openStream()
-})
-
-onBeforeUnmount(() => {
-  streamControl?.close()
-  streamControl = null
-})
-
-const edgeStatus = computed(() => state.value?.edge_status[0] ?? null)
-const latestDetection = computed(() => state.value?.recent_detections[0] ?? null)
-const displayJpeg = computed(() => latestFrameJpeg.value ?? latestDetection.value?.image_jpeg_base64 ?? null)
-const taskLogs = computed(() => state.value?.task_logs ?? [])
-const pose = computed(() => latestDetection.value?.pose ?? null)
-const detections = computed(() => latestDetection.value?.detections ?? [])
-const activeAction = computed(() => pose.value?.action ?? 'unknown')
-const cloudHint = computed(() =>
-  pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
-)
-
-function boxStyle(item: Detection, _current: DetectionResult | null): Record<string, string> {
-  const width = latestFrameWidth.value
-  const height = latestFrameHeight.value
-  return {
-    left: `${Math.min((item.box.x1 / width) * 100, 96)}%`,
-    top: `${Math.min((item.box.y1 / height) * 100, 92)}%`,
-    width: `${Math.max(((item.box.x2 - item.box.x1) / width) * 100, 4)}%`,
-    height: `${Math.max(((item.box.y2 - item.box.y1) / height) * 100, 6)}%`,
-  }
-}
-
-function actionLabel(value: string): string {
-  const map: Record<string, string> = {
-    standing: '站立',
-    sitting: '坐下',
-    raising_hand: '举手',
-    crouching: '蹲下',
-    unknown: '待复核',
-  }
-  return map[value] ?? value
-}
-
-function latestLog(logs: TaskLog[]): TaskLog | null {
-  return logs[0] ?? null
 }
 </script>
 
@@ -194,7 +191,7 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
         </article>
         <article class="strip-card">
           <span>Stream</span>
-          <strong :class="connected ? 'ok' : 'warn'">{{ connected ? 'LIVE' : '--' }}</strong>
+          <strong :class="rtcConnected ? 'ok' : 'warn'">{{ rtcConnected ? 'WebRTC' : (connected ? 'WS' : '--') }}</strong>
         </article>
       </div>
     </header>
@@ -207,22 +204,23 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
             <h2>实时画面与姿态框</h2>
           </div>
           <div class="panel-meta">
-            <span v-if="connected" class="live-dot"></span>
-            {{ connected ? 'WebSocket 实时推送' : '等待连接...' }}
+            <span v-if="rtcConnected" class="live-dot"></span>
+            {{ rtcConnected ? 'WebRTC 实时视频' : '等待连接...' }}
           </div>
         </div>
 
         <div class="frame">
-          <img
-            v-if="displayJpeg"
-            class="frame-image"
-            :src="`data:image/jpeg;base64,${displayJpeg}`"
-            alt="edge camera frame"
-          />
-          <div v-else class="frame-placeholder">
+          <video
+            ref="videoRef"
+            class="frame-video"
+            autoplay
+            playsinline
+            muted
+          ></video>
+          <div v-if="!rtcConnected" class="frame-placeholder">
             <div>
               <p>等待边端摄像头画面</p>
-              <span>启动边端服务器和采集进程后，这里会显示实时画面</span>
+              <span>启动边端服务器和采集进程后，这里会显示实时视频</span>
             </div>
           </div>
           <div class="frame-grid"></div>

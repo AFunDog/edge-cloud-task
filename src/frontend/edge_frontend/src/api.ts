@@ -1,7 +1,6 @@
 import type {
   DetectionResult,
   EdgeStatus,
-  FrameData,
   ScheduleDecision,
   SystemState,
   TaskLog,
@@ -9,6 +8,8 @@ import type {
 } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_EDGE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? ''
+
+// --------------- HTTP API ---------------
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -38,11 +39,10 @@ export function scheduleTask(payload: TaskRequest): Promise<ScheduleDecision> {
   })
 }
 
-// --------------- WebSocket 实时流 ---------------
+// --------------- WebSocket 实时流（检测数据、状态、日志） ---------------
 
 export type StreamMessage =
   | { type: 'snapshot'; data: SystemState }
-  | { type: 'frame'; data: FrameData }
   | { type: 'detection'; data: DetectionResult }
   | { type: 'status'; data: EdgeStatus }
   | { type: 'task_log'; data: TaskLog }
@@ -50,7 +50,6 @@ export type StreamMessage =
 
 export interface StreamCallbacks {
   onDetection?: (data: DetectionResult) => void
-  onFrame?: (data: FrameData) => void
   onStatus?: (data: EdgeStatus) => void
   onSnapshot?: (data: SystemState) => void
   onTaskLog?: (data: TaskLog) => void
@@ -69,35 +68,28 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
   function scheduleReconnect(): void {
     if (stopped) return
     if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
-    console.log(`[Stream] 2s 后重连...`)
+    console.log(`[WS] 2s 后重连...`)
     reconnectTimer = window.setTimeout(connect, 2000)
   }
 
   function connect(): void {
     if (stopped) return
-    console.log(`[Stream] 正在连接 ${wsUrl}`)
+    console.log(`[WS] 正在连接 ${wsUrl}`)
     try {
       ws = new WebSocket(wsUrl)
     } catch (err) {
-      console.error(`[Stream] 创建 WebSocket 失败`, err)
+      console.error(`[WS] 创建 WebSocket 失败`, err)
       scheduleReconnect()
       return
     }
 
     ws.onopen = () => {
-      console.log(`[Stream] 已连接`)
+      console.log(`[WS] 已连接`)
       callbacks.onOpen?.()
-
-      // 每 30 秒发送心跳保活
       const heartbeat = window.setInterval(() => {
-        if (ws?.readyState === WebSocket.OPEN) {
-          ws.send('ping')
-        }
+        if (ws?.readyState === WebSocket.OPEN) ws.send('ping')
       }, 30000)
-
-      ws!.addEventListener('close', () => {
-        window.clearInterval(heartbeat)
-      }, { once: true })
+      ws!.addEventListener('close', () => window.clearInterval(heartbeat), { once: true })
     }
 
     ws.onmessage = (event: MessageEvent) => {
@@ -105,11 +97,8 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
         const msg = JSON.parse(event.data) as StreamMessage
         switch (msg.type) {
           case 'snapshot':
-            console.log(`[Stream] 收到快照，检测数=${msg.data.recent_detections?.length ?? 0}`)
+            console.log(`[WS] 收到快照，检测数=${msg.data.recent_detections?.length ?? 0}`)
             callbacks.onSnapshot?.(msg.data)
-            break
-          case 'frame':
-            callbacks.onFrame?.(msg.data)
             break
           case 'detection':
             callbacks.onDetection?.(msg.data)
@@ -129,16 +118,11 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
       }
     }
 
-    ws.onerror = (ev) => {
-      console.error(`[Stream] WebSocket 错误`, ev)
-    }
-
+    ws.onerror = (ev) => console.error(`[WS] 错误`, ev)
     ws.onclose = (ev) => {
-      console.log(`[Stream] 已断开 code=${ev.code} reason=${ev.reason}`)
+      console.log(`[WS] 已断开 code=${ev.code}`)
       callbacks.onClose?.()
-      if (!stopped) {
-        scheduleReconnect()
-      }
+      if (!stopped) scheduleReconnect()
     }
   }
 
@@ -147,16 +131,80 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
   return {
     close: () => {
       stopped = true
-      if (reconnectTimer !== null) {
-        window.clearTimeout(reconnectTimer)
-        reconnectTimer = null
-      }
-      if (ws !== null) {
-        ws.onclose = null
-        ws.close()
-        ws = null
-      }
+      if (reconnectTimer !== null) { window.clearTimeout(reconnectTimer); reconnectTimer = null }
+      if (ws !== null) { ws.onclose = null; ws.close(); ws = null }
     },
   }
 }
 
+// --------------- WebRTC 视频流 ---------------
+
+export async function connectWebRTC(
+  videoElement: HTMLVideoElement,
+  onDimensionReady?: (w: number, h: number) => void,
+): Promise<{ close: () => void }> {
+  console.log('[RTC] 创建 PeerConnection')
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  })
+  let pcId = ''
+  let stopped = false
+
+  // 收到远端视频轨道 → 绑定到 <video>
+  pc.ontrack = (event: RTCTrackEvent) => {
+    console.log('[RTC] 收到视频轨道')
+    videoElement.srcObject = event.streams[0]
+  }
+
+  // 本地 ICE 候选 → 发送给后端
+  pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+    if (!event.candidate || !pcId) return
+    fetch(`/api/webrtc/candidate/${pcId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event.candidate),
+    }).catch(() => {})
+  }
+
+  // 连接状态变化
+  pc.onconnectionstatechange = () => {
+    console.log(`[RTC] 连接状态: ${pc.connectionState}`)
+  }
+
+  // 视频元数据就绪 → 回调尺寸
+  const onMeta = () => {
+    onDimensionReady?.(videoElement.videoWidth || 640, videoElement.videoHeight || 360)
+  }
+  videoElement.addEventListener('loadedmetadata', onMeta, { once: true })
+
+  // 生成 SDP offer
+  const offer = await pc.createOffer({ offerToReceiveVideo: true })
+  await pc.setLocalDescription(offer)
+
+  // 发送 offer → 后端
+  console.log('[RTC] 发送 SDP offer')
+  const resp = await fetch('/api/webrtc/offer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sdp: pc.localDescription!.sdp,
+      type: pc.localDescription!.type,
+    }),
+  })
+  const answerData = await resp.json()
+  pcId = answerData.pc_id
+
+  // 设置远端 SDP（answer）
+  await pc.setRemoteDescription(
+    new RTCSessionDescription({ sdp: answerData.sdp, type: answerData.type }),
+  )
+  console.log('[RTC] 已连接')
+
+  return {
+    close: () => {
+      stopped = true
+      videoElement.srcObject = null
+      pc.close()
+    },
+  }
+}

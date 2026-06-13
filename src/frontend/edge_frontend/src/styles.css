@@ -259,7 +259,8 @@ h1 {
     radial-gradient(circle at 25% 20%, rgba(118, 240, 200, 0.1), transparent 36%);
 }
 
-.frame-image {
+.frame-image,
+.frame-video {
   position: absolute;
   inset: 0;
   width: 100%;
