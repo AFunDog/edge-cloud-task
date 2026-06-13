@@ -28,6 +28,7 @@ class EdgeCollector:
         self._thread: threading.Thread | None = None
         self._detector: YoloDetector | None = None
         self._detection_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-detection")
+        self._detector_future: concurrent.futures.Future[YoloDetector] | None = None
         self._detection_future: concurrent.futures.Future[DetectionResult] | None = None
         self._video_future: concurrent.futures.Future[None] | None = None
         self.error: str | None = None
@@ -51,21 +52,34 @@ class EdgeCollector:
 
     def _run(self) -> None:
         try:
-            self._detector = YoloDetector(
-                self._settings.yolo_model_path,
-                public_dir=self._settings.public_dir,
-                imgsz=self._settings.yolo_input_size,
-                conf_threshold=self._settings.yolo_conf_threshold,
-                iou_threshold=self._settings.yolo_iou_threshold,
-            )
             self.running = True
             self.error = None
+            self._detector_future = self._detection_pool.submit(self._load_detector)
+            self._detector_future.add_done_callback(self._on_detector_loaded)
             self._capture_loop()
         except Exception as exc:
             self.error = str(exc)
             print(f"[EdgeCollector] 启动或采集失败：{exc}")
         finally:
             self.running = False
+
+    def _load_detector(self) -> YoloDetector:
+        return YoloDetector(
+            self._settings.yolo_model_path,
+            public_dir=self._settings.public_dir,
+            imgsz=self._settings.yolo_input_size,
+            conf_threshold=self._settings.yolo_conf_threshold,
+            iou_threshold=self._settings.yolo_iou_threshold,
+        )
+
+    def _on_detector_loaded(self, future: concurrent.futures.Future[YoloDetector]) -> None:
+        try:
+            self._detector = future.result()
+            self.error = None
+            print(f"[EdgeCollector] 检测器已就绪：{self._detector.model_path}")
+        except Exception as exc:
+            self.error = f"检测器加载失败：{exc}"
+            print(f"[EdgeCollector] {self.error}")
 
     def _capture_loop(self) -> None:
         import cv2
@@ -114,7 +128,7 @@ class EdgeCollector:
         self._video_future = asyncio.run_coroutine_threadsafe(push_video_ndarray(frame), self._loop)
 
     def _submit_detection(self, frame: Any) -> None:
-        if self._detection_future and not self._detection_future.done():
+        if self._detector is None or self._detection_future and not self._detection_future.done():
             return
         self._detection_future = self._detection_pool.submit(self._detect, frame)
         self._detection_future.add_done_callback(self._on_detection_done)

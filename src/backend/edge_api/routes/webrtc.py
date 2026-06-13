@@ -100,8 +100,6 @@ async def handle_offer(request: Request) -> JSONResponse:
         if transceiver.sender and transceiver.sender.track:
             print(f"[WebRTC] 发送轨道: {transceiver.sender.track.kind}")
 
-    await asyncio.sleep(0.1)
-
     @pc.on("connectionstatechange")
     async def _on_state() -> None:
         state = pc.connectionState

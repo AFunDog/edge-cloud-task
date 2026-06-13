@@ -100,7 +100,10 @@ async function openWebRTC(): Promise<void> {
       (w, h) => { videoWidth.value = w; videoHeight.value = h },
       (isConnected) => {
         rtcConnected.value = isConnected
-        if (!isConnected && !rtcConnecting) scheduleRtcReconnect()
+        if (!isConnected && !rtcConnecting) {
+          rtcControl = null
+          scheduleRtcReconnect()
+        }
       },
     )
   } catch (exc) {
@@ -120,11 +123,11 @@ function scheduleRtcReconnect(): void {
   }, 1500)
 }
 
-onMounted(async () => {
+onMounted(() => {
   stopped = false
-  await loadInitialState()
   openStream()
-  await openWebRTC()
+  void openWebRTC()
+  void loadInitialState()
 })
 
 onBeforeUnmount(() => {
@@ -246,7 +249,7 @@ async function submitSchedule(): Promise<void> {
           <div v-if="!rtcConnected" class="frame-placeholder">
             <div>
               <p>等待边端摄像头画面</p>
-              <span>启动边端服务器和采集进程后，这里会显示实时视频</span>
+              <span>正在建立 WebRTC 视频连接；检测数据与视频使用不同通道</span>
             </div>
           </div>
           <div class="frame-grid"></div>

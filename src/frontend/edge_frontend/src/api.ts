@@ -148,11 +148,13 @@ export async function connectWebRTC(
   const pc = new RTCPeerConnection()
   let pcId = ''
   let stopped = false
+  let connectTimer: number | null = null
 
   // 收到远端视频轨道 → 绑定到 <video>
   pc.ontrack = (event: RTCTrackEvent) => {
     console.log('[RTC] 收到视频轨道')
-    videoElement.srcObject = event.streams[0]
+    videoElement.srcObject = event.streams[0] ?? new MediaStream([event.track])
+    void videoElement.play().catch((err) => console.warn('[RTC] 视频自动播放失败', err))
   }
 
   // 本地 ICE 候选 → 发送给后端
@@ -168,7 +170,13 @@ export async function connectWebRTC(
   // 连接状态变化
   pc.onconnectionstatechange = () => {
     console.log(`[RTC] 连接状态: ${pc.connectionState}`)
-    onStateChange?.(pc.connectionState === 'connected')
+    if (pc.connectionState === 'connected') {
+      if (connectTimer !== null) window.clearTimeout(connectTimer)
+      connectTimer = null
+      onStateChange?.(true)
+    } else if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+      onStateChange?.(false)
+    }
   }
 
   // 视频元数据就绪 → 回调尺寸
@@ -180,6 +188,7 @@ export async function connectWebRTC(
   // 生成 SDP offer
   const offer = await pc.createOffer({ offerToReceiveVideo: true })
   await pc.setLocalDescription(offer)
+  await waitForIceGatheringComplete(pc)
 
   // 发送 offer → 后端
   console.log('[RTC] 发送 SDP offer')
@@ -199,14 +208,42 @@ export async function connectWebRTC(
   await pc.setRemoteDescription(
     new RTCSessionDescription({ sdp: answerData.sdp, type: answerData.type }),
   )
-  console.log('[RTC] 已连接')
+  console.log('[RTC] 信令协商完成，等待媒体连接')
+  connectTimer = window.setTimeout(() => {
+    if (!stopped && pc.connectionState !== 'connected') {
+      console.warn(`[RTC] 连接超时，当前状态: ${pc.connectionState}`)
+      pc.close()
+      onStateChange?.(false)
+    }
+  }, 8000)
 
   return {
     close: () => {
       stopped = true
+      if (connectTimer !== null) window.clearTimeout(connectTimer)
       onStateChange?.(false)
       videoElement.srcObject = null
       pc.close()
     },
   }
+}
+
+function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve()
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(done, 3000)
+
+    function done(): void {
+      window.clearTimeout(timeout)
+      pc.removeEventListener('icegatheringstatechange', onStateChange)
+      resolve()
+    }
+
+    function onStateChange(): void {
+      if (pc.iceGatheringState === 'complete') done()
+    }
+
+    pc.addEventListener('icegatheringstatechange', onStateChange)
+  })
 }

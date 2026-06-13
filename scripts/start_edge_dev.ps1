@@ -29,16 +29,21 @@ function Start-EdgeProcess {
 }
 
 function Wait-EdgeApi {
-    $deadline = (Get-Date).AddSeconds(30)
+    $deadline = (Get-Date).AddSeconds(60)
+    $lastError = ""
     while ((Get-Date) -lt $deadline) {
         try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8001/health" -UseBasicParsing -TimeoutSec 1
-            if ($response.StatusCode -eq 200) { return }
+            $response = Invoke-RestMethod -Uri "http://127.0.0.1:8001/health" -TimeoutSec 2
+            if ($response.status -eq "ok") {
+                Write-Host "[edge-dev] 边端 API 已就绪"
+                return
+            }
         } catch {
-            Start-Sleep -Milliseconds 400
+            $lastError = $_.Exception.Message
         }
+        Start-Sleep -Milliseconds 400
     }
-    throw "边端 API 在 30 秒内未就绪。"
+    throw "边端 API 在 60 秒内未就绪。最后错误：$lastError"
 }
 
 try {

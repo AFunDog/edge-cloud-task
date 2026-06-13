@@ -6,7 +6,7 @@ router = APIRouter(tags=["state"])
 
 
 @router.get("/health")
-def health(request: Request) -> dict:
+async def health(request: Request) -> dict:
     collector = getattr(request.app.state, "collector", None)
     return {
         "status": "ok",
