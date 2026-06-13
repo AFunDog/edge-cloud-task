@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     postgres_schema: str = "public"
     postgres_vector_enabled: bool = False
     edge_device_id: str = "edge-camera-01"
+    edge_collector_enabled: bool = True
+    edge_task: str = "姿态识别"
     edge_camera_index: int = 0
     edge_camera_width: int = 1280
     edge_camera_height: int = 720

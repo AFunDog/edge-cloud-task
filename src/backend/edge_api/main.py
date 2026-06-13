@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.edge_api.routes import edge, state, stream, tasks, webrtc
+from backend.edge_api.runtime.collector import EdgeCollector
+from backend.shared.core.config import get_settings
 
-app = FastAPI(title="Edge Server", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    collector = EdgeCollector(settings)
+    app.state.collector = collector
+    if settings.edge_collector_enabled:
+        collector.start(asyncio.get_running_loop())
+    try:
+        yield
+    finally:
+        collector.stop()
+
+
+app = FastAPI(title="Edge Server", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -37,6 +37,8 @@ python -m venv .venv
 .\.venv\Scripts\uvicorn backend.edge_api.main:app --reload --port 8001
 ```
 
+边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测和 WebRTC 视频发布，关闭 API 时会一并停止采集器。通过 `http://localhost:8001/health` 可以查看内置采集器的运行状态和错误信息。
+
 另开一个终端启动云端前端开发服务器：
 
 ```powershell
@@ -53,7 +55,7 @@ npm install
 npm run dev
 ```
 
-也可以用一个 PowerShell 调试脚本同时启动边端后端、前端和摄像头采集器；按 `Ctrl+C` 会一起停止：
+也可以用一个 PowerShell 调试脚本同时启动边端前端和包含采集器的边端后端；按 `Ctrl+C` 会一起停止：
 
 ```powershell
 .\scripts\start_edge_dev.ps1
@@ -61,7 +63,9 @@ npm run dev
 
 实时视频默认由采集器在后台压缩并通过 WebRTC 推送，繁忙时只保留最新帧，避免旧帧堆积造成越来越高的延迟。可在 `.env` 中通过 `EDGE_STREAM_WIDTH`、`EDGE_STREAM_JPEG_QUALITY` 和 `EDGE_STREAM_MAX_FPS` 调整清晰度与流畅度。
 
-边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。系统不做模拟降级：摄像头不可用、模型缺失或 YOLO 依赖缺失都会直接报错。
+边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。摄像头不可用、模型缺失或 YOLO 依赖缺失时，内置采集器会在 `/health` 中报告错误，API 仍保持可用。
+
+独立 runner 仅用于单帧检查或本地调试窗口。运行它之前应在 `.env` 中设置 `EDGE_COLLECTOR_ENABLED=false`，避免与 API 内置采集器争抢摄像头：
 
 ```powershell
 .\.venv\Scripts\pip install -e .[yolo]
@@ -138,7 +142,7 @@ docker compose exec postgres psql -U edge_cloud -d edge_cloud
 docker compose --profile edge up --build
 ```
 
-Windows 本机摄像头更建议直接运行 `edge.runner`，因为 Docker Desktop 对宿主摄像头透传依赖额外设备映射。
+Windows 本机摄像头更建议直接运行边端 API，因为 Docker Desktop 对宿主摄像头透传依赖额外设备映射。
 
 ## 当前实现边界
 

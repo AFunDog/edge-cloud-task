@@ -1,6 +1,5 @@
 param(
     [string]$Task = "姿态识别",
-    [switch]$Offline,
     [switch]$SkipInstall
 )
 
@@ -9,6 +8,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $python = Join-Path $root ".venv\Scripts\python.exe"
 $frontend = Join-Path $root "src\frontend\edge_frontend"
 $env:PYTHONPATH = Join-Path $root "src"
+$env:EDGE_TASK = $Task
 
 if (-not (Test-Path $python)) {
     throw "未找到 $python，请先创建虚拟环境并安装项目依赖。"
@@ -46,12 +46,8 @@ try {
     Start-EdgeProcess "边端前端" "npm.cmd" @("--prefix", $frontend, "run", "dev") $root
     Wait-EdgeApi
 
-    $collectorArgs = @("-m", "backend.edge_api.runtime.runner", "--task", $Task)
-    if ($Offline) { $collectorArgs += "--offline" }
-    Start-EdgeProcess "边端采集器" $python $collectorArgs $root
-
     Write-Host ""
-    Write-Host "[edge-dev] 全部模块已启动"
+    Write-Host "[edge-dev] 边端后端（含采集器）和前端已启动"
     Write-Host "[edge-dev] 前端: http://localhost:5174"
     Write-Host "[edge-dev] 后端: http://localhost:8001/docs"
     Write-Host "[edge-dev] 按 Ctrl+C 停止全部模块"
