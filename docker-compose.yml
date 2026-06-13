@@ -1,7 +1,27 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: edge-cloud-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-edge_cloud}
+      POSTGRES_USER: ${POSTGRES_USER:-edge_cloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-edge_cloud_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-edge_cloud} -d ${POSTGRES_DB:-edge_cloud}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   cloud:
-    build: .
-    command: uvicorn cloud_api.main:app --host 0.0.0.0 --port 8000
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    command: uvicorn backend.cloud_api.main:app --host 0.0.0.0 --port 8000
     env_file:
       - path: .env
         required: false
@@ -11,8 +31,10 @@ services:
       - ./data:/app/data
 
   edge:
-    build: .
-    command: uvicorn edge_api.main:app --host 0.0.0.0 --port 8001
+    build:
+      context: .
+      dockerfile: Dockerfile.cloud
+    command: uvicorn backend.edge_api.main:app --host 0.0.0.0 --port 8001
     env_file:
       - path: .env
         required: false
@@ -23,7 +45,7 @@ services:
 
   cloud-web:
     build:
-      context: ./src/cloud_frontend
+      context: ./src/frontend/cloud_frontend
     ports:
       - "8080:80"
     depends_on:
@@ -31,7 +53,7 @@ services:
 
   edge-web:
     build:
-      context: ./src/edge_frontend
+      context: ./src/frontend/edge_frontend
     ports:
       - "8081:80"
     depends_on:
@@ -41,7 +63,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.edge
-    command: python -m edge_cloud_system.edge.runner --task "姿态识别"
+    command: python -m backend.edge_api.runtime.runner --task "姿态识别"
     env_file:
       - path: .env
         required: false
@@ -58,3 +80,6 @@ services:
       - cloud
     profiles:
       - edge
+
+volumes:
+  postgres_data:

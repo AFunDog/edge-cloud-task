@@ -7,6 +7,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     edge_api_base_url: str = "http://localhost:8001"
     cloud_api_base_url: str = "http://localhost:8000"
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "edge_cloud"
+    postgres_user: str = "edge_cloud"
+    postgres_password: str = "edge_cloud_dev"
+    postgres_schema: str = "public"
+    postgres_vector_enabled: bool = False
     edge_device_id: str = "edge-camera-01"
     edge_camera_index: int = 0
     edge_camera_width: int = 1280

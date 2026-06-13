@@ -27,6 +27,12 @@
 - `backend/cloud_api/cloud/search.py`：搜索工具接口，支持本地摘要和 HTTP JSON 搜索适配器。
 - `backend/cloud_api/cloud/llm.py`：大模型客户端抽象，支持 mock 和 OpenAI-compatible Chat Completions。
 
+### 数据层 Data
+
+- `docker-compose.yml`：提供独立的 PostgreSQL 服务，当前使用 `pgvector/pgvector:pg16` 镜像。
+- `data/postgres/init/001-enable-pgvector.sql`：数据库初始化时自动启用 `vector` 扩展，但不创建业务表、不插入演示数据。
+- `backend/shared/core/config.py`：统一暴露 PostgreSQL 主机、端口、库名、账号和向量能力开关，供后续云端知识库和任务存储接入。
+
 ### 前端 Frontend
 
 `src/frontend/cloud_frontend/` 使用 Vite + Vue3 + TypeScript 实现云端控制台，负责系统概览、任务日志和智能体对话视图。`src/frontend/edge_frontend/` 使用 Vite + Vue3 + TypeScript 实现边端工作台，负责实时画面、姿态动作和本地任务调度展示。两套前端分别通过 `/api` 访问云端服务与边端服务，生产环境可由 Nginx 分别反向代理到对应 FastAPI。
@@ -38,11 +44,12 @@
 3. 对姿态任务，边端优先用规则算法输出基础动作结果；若匹配不到合理姿态，则生成待云端复核的模拟结果。
 4. 复杂任务上传云端，由 Agent 结合知识库、搜索工具和 LLM 生成分析。
 5. 边端前端定时读取边端状态，展示连接状态、资源概况、检测框和姿态动作；云端前端定时读取云端状态，展示任务日志和智能体回答。
+6. PostgreSQL 当前作为独立基础设施运行，暂不承载展示数据；后续可用于任务日志持久化、知识片段存储和向量检索。
 
 ## 扩展点
 
 - 真实摄像头：`backend/edge_api/runtime/runner.py` 默认连续采集本机摄像头，`--once` 可只处理一帧；实时窗口使用 `EDGE_SKIP_FRAMES` 跳帧推理并复用上一帧检测框，提高显示帧率。
 - 真实 YOLO：将模型放入根目录 `public/`，或配置 `YOLO_MODEL_PATH`，并安装 `.[yolo]`。
-- 向量数据库：把 `KnowledgeBase.search()` 替换为 FAISS、Chroma 或 Milvus。
+- 向量数据库：优先复用当前 PostgreSQL + `pgvector`，把 `KnowledgeBase.search()` 从关键词匹配扩展为 embedding 存储与近邻检索。
 - 联网搜索：实现 `SearchTool.search()` 的真实供应商适配。
 - 大模型：实现 `LLMClient.generate()` 的具体 API 适配。

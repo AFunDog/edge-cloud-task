@@ -8,4 +8,4 @@ COPY public ./public
 
 RUN pip install --no-cache-dir -e .[yolo]
 
-CMD ["python", "-m", "edge_cloud_system.edge.runner"]
+CMD ["python", "-m", "backend.edge_api.runtime.runner"]
