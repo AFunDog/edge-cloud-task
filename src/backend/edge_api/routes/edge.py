@@ -26,8 +26,13 @@ async def receive_raw_frame(request: Request) -> dict:
     frame_id = request.headers.get("x-frame-id", "")
 
     raw_bytes = await request.body()
-    arr = np.frombuffer(raw_bytes, dtype=np.uint8).reshape(height, width, 3)
-    frame = VideoFrame.from_ndarray(arr, format="bgr24")
+    # copy() 必须：否则 VideoFrame 可能引用已释放的 HTTP body 缓冲区
+    arr = np.frombuffer(raw_bytes, dtype=np.uint8).copy().reshape(height, width, 3)
+    try:
+        frame = VideoFrame.from_ndarray(arr, format="bgr24")
+    except Exception as exc:
+        print(f"[Edge] VideoFrame.from_ndarray 失败: {exc}")
+        return {"ok": False, "error": str(exc)}
     await push_video_frame(frame)
 
     return {"ok": True, "frame_id": frame_id}

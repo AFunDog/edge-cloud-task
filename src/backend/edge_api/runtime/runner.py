@@ -186,6 +186,7 @@ def main() -> None:
             else:
                 # --- 正常模式：原始 BGR 字节推送 + 后台异步检测 ---
                 last_status_at = 0.0
+                publish_ok = 0; publish_fail = 0
                 while True:
                     frame = camera.read()
                     height, width = frame.shape[:2]
@@ -193,12 +194,18 @@ def main() -> None:
                     # 快路径：原始 BGR 字节直接推送（零中间压缩）
                     if publish:
                         fid = uuid4().hex
-                        edge_client.publish_raw_frame(
+                        ok = edge_client.publish_raw_frame(
                             bgr_bytes=frame.tobytes(),
                             width=width, height=height,
                             device_id=device_id,
                             frame_id=fid,
                         )
+                        if ok:
+                            publish_ok += 1
+                        else:
+                            publish_fail += 1
+                        if (publish_ok + publish_fail) % 30 == 1:
+                            print(f"[Runner] 已推送 {publish_ok} 帧 (失败 {publish_fail})")
 
                     # 定时推送设备状态（~每秒一次）
                     now = time.monotonic()
