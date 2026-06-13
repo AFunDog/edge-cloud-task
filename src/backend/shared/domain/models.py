@@ -69,6 +69,16 @@ class DetectionResult(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class FrameData(BaseModel):
+    """轻量帧数据，仅含 JPEG 画面及元信息，不含检测结果。"""
+    device_id: str
+    frame_id: str = Field(default_factory=lambda: uuid4().hex)
+    width: int = 640
+    height: int = 360
+    image_jpeg_base64: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class EdgeStatus(BaseModel):
     device_id: str
     online: bool = True

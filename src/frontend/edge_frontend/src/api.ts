@@ -1,6 +1,7 @@
 import type {
   DetectionResult,
   EdgeStatus,
+  FrameData,
   ScheduleDecision,
   SystemState,
   TaskLog,
@@ -41,6 +42,7 @@ export function scheduleTask(payload: TaskRequest): Promise<ScheduleDecision> {
 
 export type StreamMessage =
   | { type: 'snapshot'; data: SystemState }
+  | { type: 'frame'; data: FrameData }
   | { type: 'detection'; data: DetectionResult }
   | { type: 'status'; data: EdgeStatus }
   | { type: 'task_log'; data: TaskLog }
@@ -48,6 +50,7 @@ export type StreamMessage =
 
 export interface StreamCallbacks {
   onDetection?: (data: DetectionResult) => void
+  onFrame?: (data: FrameData) => void
   onStatus?: (data: EdgeStatus) => void
   onSnapshot?: (data: SystemState) => void
   onTaskLog?: (data: TaskLog) => void
@@ -104,6 +107,9 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
           case 'snapshot':
             console.log(`[Stream] 收到快照，检测数=${msg.data.recent_detections?.length ?? 0}`)
             callbacks.onSnapshot?.(msg.data)
+            break
+          case 'frame':
+            callbacks.onFrame?.(msg.data)
             break
           case 'detection':
             callbacks.onDetection?.(msg.data)

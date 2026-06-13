@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { connectStream, fetchState, scheduleTask } from './api'
-import type { Detection, DetectionResult, EdgeStatus, SystemState, TaskLog } from './types'
+import type { Detection, DetectionResult, EdgeStatus, FrameData, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 
 const state = ref<SystemState | null>(null)
 const loading = ref(true)
 const error = ref('')
 const connected = ref(false)
+const latestFrameJpeg = ref<string | null>(null)
+const latestFrameWidth = ref(640)
+const latestFrameHeight = ref(360)
 const taskText = ref('姿态识别')
 const deviceId = ref('edge-camera-01')
 const scheduleBusy = ref(false)
@@ -23,6 +26,12 @@ function applySnapshot(snapshot: SystemState): void {
   state.value = snapshot
   loading.value = false
   error.value = ''
+}
+
+function applyFrame(frame: FrameData): void {
+  latestFrameJpeg.value = frame.image_jpeg_base64
+  latestFrameWidth.value = frame.width
+  latestFrameHeight.value = frame.height
 }
 
 function applyDetection(detection: DetectionResult): void {
@@ -74,6 +83,7 @@ async function loadInitialState(): Promise<void> {
 function openStream(): void {
   streamControl = connectStream({
     onSnapshot: applySnapshot,
+    onFrame: applyFrame,
     onDetection: applyDetection,
     onStatus: applyEdgeStatus,
     onTaskLog: applyTaskLog,
@@ -118,6 +128,7 @@ onBeforeUnmount(() => {
 
 const edgeStatus = computed(() => state.value?.edge_status[0] ?? null)
 const latestDetection = computed(() => state.value?.recent_detections[0] ?? null)
+const displayJpeg = computed(() => latestFrameJpeg.value ?? latestDetection.value?.image_jpeg_base64 ?? null)
 const taskLogs = computed(() => state.value?.task_logs ?? [])
 const pose = computed(() => latestDetection.value?.pose ?? null)
 const detections = computed(() => latestDetection.value?.detections ?? [])
@@ -126,9 +137,9 @@ const cloudHint = computed(() =>
   pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
 )
 
-function boxStyle(item: Detection, current: DetectionResult | null): Record<string, string> {
-  const width = current?.frame_width || 640
-  const height = current?.frame_height || 360
+function boxStyle(item: Detection, _current: DetectionResult | null): Record<string, string> {
+  const width = latestFrameWidth.value
+  const height = latestFrameHeight.value
   return {
     left: `${Math.min((item.box.x1 / width) * 100, 96)}%`,
     top: `${Math.min((item.box.y1 / height) * 100, 92)}%`,
@@ -203,9 +214,9 @@ function latestLog(logs: TaskLog[]): TaskLog | null {
 
         <div class="frame">
           <img
-            v-if="latestDetection?.image_jpeg_base64"
+            v-if="displayJpeg"
             class="frame-image"
-            :src="`data:image/jpeg;base64,${latestDetection.image_jpeg_base64}`"
+            :src="`data:image/jpeg;base64,${displayJpeg}`"
             alt="edge camera frame"
           />
           <div v-else class="frame-placeholder">

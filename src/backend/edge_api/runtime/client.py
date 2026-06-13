@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from backend.shared.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, TaskLog
+from backend.shared.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, FrameData, TaskLog
 
 
 class EdgeClient:
@@ -19,6 +19,9 @@ class EdgeClient:
 
     def publish_status(self, status: EdgeStatus) -> bool:
         return self._post_json("/api/edge/status", status.model_dump(mode="json"), timeout=5)
+
+    def publish_frame(self, frame: FrameData) -> bool:
+        return self._post_json("/api/edge/frames", frame.model_dump(mode="json"), timeout=2)
 
     def publish_detection(self, result: DetectionResult) -> bool:
         return self._post_json("/api/edge/detections", result.model_dump(mode="json"), timeout=5)

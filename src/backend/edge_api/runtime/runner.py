@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
 from backend.edge_api.runtime.client import CloudClient, EdgeClient
@@ -11,7 +13,7 @@ from backend.edge_api.runtime.debug import close_debug_window, render_debug_wind
 from backend.edge_api.runtime.detector import YoloDetector
 from backend.edge_api.runtime.pose import PoseAnalyzer
 from backend.shared.core.config import get_settings
-from backend.shared.domain.models import AgentRequest, EdgeStatus, ExecutionTarget, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
+from backend.shared.domain.models import AgentRequest, DetectionResult, EdgeStatus, ExecutionTarget, FrameData, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
 from backend.shared.domain.scheduler import TaskScheduler
 
 
@@ -105,13 +107,45 @@ def main() -> None:
         if now - cloud_cache_checked_at > 5.0:
             cloud_cache_available = cloud_client.is_available(); cloud_cache_checked_at = now
         return cloud_cache_available
-    print(f"使用 YOLO 模型：{detector.model_path}"); print(f"模型任务：{detector.task}"); print(f"推理后端：{detector.mode}，输入尺寸：{settings.yolo_input_size}，跳帧：{skip_frames}"); print(f"请求摄像头尺寸：{camera_width}x{camera_height}")
+    print(f"使用 YOLO 模型：{detector.model_path}"); print(f"模型任务：{detector.task}"); print(f"推理后端：{detector.mode}，输入尺寸：{settings.yolo_input_size}，检测间隔：{skip_frames} 帧"); print(f"请求摄像头尺寸：{camera_width}x{camera_height}")
+
+    # 后台检测锁：防止多个检测线程同时使用 ONNX session
+    detection_lock = threading.Lock()
+    # 上一轮检测结果，供 debug_window 模式复用
+    last_detection: DetectionResult | None = None
+
+    def _run_background_detect(frame_copy: object, jpeg_base64: str, device_id: str, task_desc: str) -> None:
+        """后台线程：对当前帧执行 YOLO 检测 + 姿态分析 + 上报"""
+        nonlocal last_detection
+        acquired = detection_lock.acquire(blocking=False)
+        if not acquired:
+            return  # 上一轮检测尚未完成，丢弃本帧
+        try:
+            result = detector.detect(device_id, frame=frame_copy, image_jpeg_base64=jpeg_base64)
+            if "姿态" in task_desc or "pose" in task_desc.lower() or result.model_task == "pose":
+                pose_decision = PoseAnalyzer().analyze(result.detections, (result.frame_width, result.frame_height))
+                result.pose = pose_decision.analysis
+            last_detection = result
+            # 发布检测结果
+            if publish:
+                edge_client.publish_detection(result)
+        except Exception as exc:
+            print(f"检测线程异常：{exc}")
+        finally:
+            detection_lock.release()
+
+    publish = not args.offline
+    device_id = settings.edge_device_id
+    task_desc = args.task
+
     try:
         with CameraSource(camera_index, width=camera_width, height=camera_height) as camera:
             actual_width, actual_height = camera.source_size
             if actual_width and actual_height:
                 print(f"实际摄像头尺寸：{actual_width}x{actual_height}")
+
             if args.debug_window:
+                # --- 调试窗口模式：本地渲染优先，检测异步后台执行 ---
                 try:
                     while True:
                         frame, current_frame_id = camera.read_latest()
@@ -127,28 +161,73 @@ def main() -> None:
                                 if len(fps_samples) > 30:
                                     fps_samples.pop(0)
                         last_frame_time = now; last_frame_id = current_frame_id
-                        if frame_index % skip_frames == 0 or last_snapshot is None:
-                            last_snapshot = process_frame(task=args.task, offline=args.offline, detector=detector, scheduler=scheduler, edge_client=edge_client, cloud_client=cloud_client, device_id=settings.edge_device_id, frame=frame, publish=False, cloud_available=False, include_image=False, mock_cloud=mock_cloud)
+
+                        # 检测路径：仅在需要时编码 JPEG + 后台异步执行
+                        if frame_index % skip_frames == 0 or last_detection is None:
+                            jpeg_bytes = encode_frame_to_jpeg_base64(frame)
+                            threading.Thread(
+                                target=_run_background_detect,
+                                args=(frame.copy(), jpeg_bytes, device_id, task_desc),
+                                daemon=True,
+                            ).start()
+
                         display_fps = sum(fps_samples) / len(fps_samples) if fps_samples else 0.0
-                        snapshot = last_snapshot
-                        key = render_debug_window(frame, result=snapshot.result, request=snapshot.request, decision=snapshot.decision, cloud_available=snapshot.cloud_available, display_fps=display_fps, source_fps=camera.source_fps, source_size=camera.source_size, wait_for_key=False)
+                        key = render_debug_window(frame, result=last_detection,
+                                                  display_fps=display_fps,
+                                                  source_fps=camera.source_fps,
+                                                  source_size=camera.source_size,
+                                                  wait_for_key=False)
                         if key in (27, ord("q"), ord("Q")):
                             break
                         frame_index += 1
                 except RuntimeError as exc:
                     print(exc)
+
             else:
+                # --- 正常模式：全帧率推送画面 + 后台异步检测 ---
+                last_status_at = 0.0
                 while True:
                     frame = camera.read()
+                    height, width = frame.shape[:2]
+
+                    # 快路径：编码 JPEG + 推送原始帧（摄像头全帧率）
+                    jpeg_bytes = encode_frame_to_jpeg_base64(frame)
+                    if publish:
+                        edge_client.publish_frame(FrameData(
+                            device_id=device_id,
+                            frame_id=uuid4().hex,
+                            width=width, height=height,
+                            image_jpeg_base64=jpeg_bytes,
+                        ))
+
+                    # 定时推送设备状态（~每秒一次）
+                    now = time.monotonic()
+                    if publish and now - last_status_at > 1.0:
+                        edge_client.publish_status(EdgeStatus(
+                            device_id=device_id,
+                            fps=round(1.0 / max(now - last_status_at, 1e-6), 1),
+                            cpu_percent=12.5,
+                            memory_percent=33.0,
+                            last_seen=datetime.now(timezone.utc),
+                        ))
+                        last_status_at = now
+
+                    # 检测路径：后台线程异步执行，不阻塞主循环
                     if frame_index % skip_frames == 0:
-                        process_frame(task=args.task, offline=args.offline, detector=detector, scheduler=scheduler, edge_client=edge_client, cloud_client=cloud_client, device_id=settings.edge_device_id, frame=frame, publish=True, cloud_available=get_cloud_available(), include_image=True, mock_cloud=mock_cloud)
+                        threading.Thread(
+                            target=_run_background_detect,
+                            args=(frame.copy(), jpeg_bytes, device_id, task_desc),
+                            daemon=True,
+                        ).start()
+
                     if args.once:
                         break
                     frame_index += 1
                     if interval > 0:
                         time.sleep(interval)
+
     except KeyboardInterrupt:
-        print("已退出调试窗口。")
+        print("已退出。")
     finally:
         close_debug_window()
 

@@ -28,6 +28,15 @@ export interface PoseAnalysis {
   evidence: string[]
 }
 
+export interface FrameData {
+  device_id: string
+  frame_id: string
+  width: number
+  height: number
+  image_jpeg_base64: string
+  created_at: string
+}
+
 export interface DetectionResult {
   device_id: string
   frame_id: string
