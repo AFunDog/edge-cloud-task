@@ -1,11 +1,11 @@
-import base64
+import numpy as np
+from av import VideoFrame
+from fastapi import APIRouter, Request
 
-from fastapi import APIRouter
-
-from backend.edge_api.routes.webrtc import push_raw_jpeg
+from backend.edge_api.routes.webrtc import push_video_frame
 from backend.edge_api.runtime.stream import stream_manager
 from backend.shared.core.state import runtime_state
-from backend.shared.domain.models import DetectionResult, EdgeStatus, FrameData
+from backend.shared.domain.models import DetectionResult, EdgeStatus
 
 router = APIRouter(prefix="/api/edge", tags=["edge-ingest"])
 
@@ -17,12 +17,20 @@ async def update_edge_status(status: EdgeStatus) -> dict:
     return {"ok": True}
 
 
-@router.post("/frames")
-async def receive_frame(frame: FrameData) -> dict:
-    """接收原始摄像头帧 → 推入 WebRTC 视频缓冲（浏览器 <video> 硬解播放）"""
-    jpeg_bytes = base64.b64decode(frame.image_jpeg_base64)
-    await push_raw_jpeg(jpeg_bytes)
-    return {"ok": True, "frame_id": frame.frame_id}
+@router.post("/frames/raw")
+async def receive_raw_frame(request: Request) -> dict:
+    """接收原始 BGR 像素字节 → 直接构造 VideoFrame → H.264 编码（零中间压缩）"""
+    width = int(request.headers.get("x-frame-width", "640"))
+    height = int(request.headers.get("x-frame-height", "360"))
+    device_id = request.headers.get("x-device-id", "unknown")
+    frame_id = request.headers.get("x-frame-id", "")
+
+    raw_bytes = await request.body()
+    arr = np.frombuffer(raw_bytes, dtype=np.uint8).reshape(height, width, 3)
+    frame = VideoFrame.from_ndarray(arr, format="bgr24")
+    await push_video_frame(frame)
+
+    return {"ok": True, "frame_id": frame_id}
 
 
 @router.post("/detections")

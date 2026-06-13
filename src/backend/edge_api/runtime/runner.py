@@ -13,7 +13,7 @@ from backend.edge_api.runtime.debug import close_debug_window, render_debug_wind
 from backend.edge_api.runtime.detector import YoloDetector
 from backend.edge_api.runtime.pose import PoseAnalyzer
 from backend.shared.core.config import get_settings
-from backend.shared.domain.models import AgentRequest, DetectionResult, EdgeStatus, ExecutionTarget, FrameData, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
+from backend.shared.domain.models import AgentRequest, DetectionResult, EdgeStatus, ExecutionTarget, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
 from backend.shared.domain.scheduler import TaskScheduler
 
 
@@ -184,21 +184,21 @@ def main() -> None:
                     print(exc)
 
             else:
-                # --- 正常模式：全帧率推送画面 + 后台异步检测 ---
+                # --- 正常模式：原始 BGR 字节推送 + 后台异步检测 ---
                 last_status_at = 0.0
                 while True:
                     frame = camera.read()
                     height, width = frame.shape[:2]
 
-                    # 快路径：编码 JPEG + 推送原始帧（摄像头全帧率）
-                    jpeg_bytes = encode_frame_to_jpeg_base64(frame)
+                    # 快路径：原始 BGR 字节直接推送（零中间压缩）
                     if publish:
-                        edge_client.publish_frame(FrameData(
-                            device_id=device_id,
-                            frame_id=uuid4().hex,
+                        fid = uuid4().hex
+                        edge_client.publish_raw_frame(
+                            bgr_bytes=frame.tobytes(),
                             width=width, height=height,
-                            image_jpeg_base64=jpeg_bytes,
-                        ))
+                            device_id=device_id,
+                            frame_id=fid,
+                        )
 
                     # 定时推送设备状态（~每秒一次）
                     now = time.monotonic()
@@ -212,8 +212,9 @@ def main() -> None:
                         ))
                         last_status_at = now
 
-                    # 检测路径：后台线程异步执行，不阻塞主循环
+                    # 检测路径：后台线程异步执行（仍需 JPEG 给 DetectionResult）
                     if frame_index % skip_frames == 0:
+                        jpeg_bytes = encode_frame_to_jpeg_base64(frame)
                         threading.Thread(
                             target=_run_background_detect,
                             args=(frame.copy(), jpeg_bytes, device_id, task_desc),
