@@ -5,6 +5,7 @@ import time
 from fractions import Fraction
 from uuid import uuid4
 
+import numpy as np
 from aiortc import RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, VideoStreamTrack
 from av import VideoFrame
 from fastapi import APIRouter, Request
@@ -12,8 +13,25 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/webrtc", tags=["webrtc"])
 
-# 原始 VideoFrame 环形缓冲（无需 JPEG 编解码）
-_frame_buffer: asyncio.Queue[VideoFrame] = asyncio.Queue(maxsize=2)
+class _LatestFrameHub:
+    def __init__(self) -> None:
+        self._condition = asyncio.Condition()
+        self._frame: np.ndarray | None = None
+        self._sequence = 0
+
+    async def publish(self, frame: np.ndarray) -> None:
+        async with self._condition:
+            self._frame = frame
+            self._sequence += 1
+            self._condition.notify_all()
+
+    async def next(self, after_sequence: int) -> tuple[np.ndarray, int]:
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._frame is not None and self._sequence > after_sequence)
+            return self._frame, self._sequence
+
+
+_frame_hub = _LatestFrameHub()
 
 # 活跃 PeerConnection
 _pcs: dict[str, RTCPeerConnection] = {}
@@ -24,17 +42,14 @@ _recv_count = 0
 
 
 async def push_video_frame(frame: VideoFrame) -> None:
-    """推入已构造好的 VideoFrame，由 CameraTrack 直接消费 → H.264 编码"""
+    await push_video_ndarray(frame.to_ndarray(format="bgr24"))
+
+
+async def push_video_ndarray(frame: np.ndarray) -> None:
+    """发布最新帧；每个 WebRTC 客户端独立读取，不会互相抢帧。"""
     global _push_count
-    if _frame_buffer.full():
-        try:
-            _frame_buffer.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-    await _frame_buffer.put(frame)
+    await _frame_hub.publish(frame)
     _push_count += 1
-    if _push_count % 30 == 1:
-        print(f"[WebRTC] push={_push_count} recv={_recv_count} buf={_frame_buffer.qsize()}")
 
 
 class _CameraTrack(VideoStreamTrack):
@@ -44,10 +59,12 @@ class _CameraTrack(VideoStreamTrack):
         super().__init__()
         self._start = time.time()
         self._counter = 0
+        self._sequence = 0
 
     async def recv(self) -> VideoFrame:
         global _recv_count
-        frame = await _frame_buffer.get()
+        ndarray, self._sequence = await _frame_hub.next(self._sequence)
+        frame = VideoFrame.from_ndarray(ndarray, format="bgr24")
         self._counter += 1
         _recv_count += 1
         frame.pts = int((time.time() - self._start) * 90000)
@@ -55,8 +72,6 @@ class _CameraTrack(VideoStreamTrack):
 
         if _recv_count == 1:
             print(f"[WebRTC] 首帧: {frame.width}x{frame.height} format={frame.format.name}")
-        if _recv_count % 30 == 1:
-            print(f"[WebRTC] recv 帧 #{_recv_count} push={_push_count}")
         return frame
 
 
@@ -85,7 +100,7 @@ async def handle_offer(request: Request) -> JSONResponse:
         if transceiver.sender and transceiver.sender.track:
             print(f"[WebRTC] 发送轨道: {transceiver.sender.track.kind}")
 
-    await asyncio.sleep(0.3)  # 等待 ICE 候选收集
+    await asyncio.sleep(0.1)
 
     @pc.on("connectionstatechange")
     async def _on_state() -> None:

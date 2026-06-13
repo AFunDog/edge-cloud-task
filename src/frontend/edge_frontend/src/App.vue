@@ -22,6 +22,9 @@ const scheduleResult = ref<{
 
 let streamControl: { close: () => void } | null = null
 let rtcControl: { close: () => void } | null = null
+let rtcReconnectTimer: number | null = null
+let rtcConnecting = false
+let stopped = false
 const videoRef = ref<HTMLVideoElement | null>(null)
 
 // ---------- 回调 ----------
@@ -87,25 +90,46 @@ function openStream(): void {
 }
 
 async function openWebRTC(): Promise<void> {
-  if (!videoRef.value) return
+  if (!videoRef.value || stopped || rtcConnecting) return
+  rtcConnecting = true
+  rtcControl?.close()
+  rtcControl = null
   try {
     rtcControl = await connectWebRTC(
       videoRef.value,
       (w, h) => { videoWidth.value = w; videoHeight.value = h },
+      (isConnected) => {
+        rtcConnected.value = isConnected
+        if (!isConnected && !rtcConnecting) scheduleRtcReconnect()
+      },
     )
-    rtcConnected.value = true
   } catch (exc) {
     console.error('[RTC] 连接失败', exc)
+    rtcConnected.value = false
+  } finally {
+    rtcConnecting = false
+    if (!rtcControl) scheduleRtcReconnect()
   }
 }
 
+function scheduleRtcReconnect(): void {
+  if (stopped || rtcReconnectTimer !== null) return
+  rtcReconnectTimer = window.setTimeout(() => {
+    rtcReconnectTimer = null
+    void openWebRTC()
+  }, 1500)
+}
+
 onMounted(async () => {
+  stopped = false
   await loadInitialState()
   openStream()
   await openWebRTC()
 })
 
 onBeforeUnmount(() => {
+  stopped = true
+  if (rtcReconnectTimer !== null) window.clearTimeout(rtcReconnectTimer)
   streamControl?.close()
   streamControl = null
   rtcControl?.close()
@@ -124,12 +148,14 @@ const cloudHint = computed(() =>
   pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
 )
 
-function boxStyle(item: Detection, _current: DetectionResult | null): Record<string, string> {
+function boxStyle(item: Detection, current: DetectionResult | null): Record<string, string> {
+  const width = current?.frame_width || videoWidth.value
+  const height = current?.frame_height || videoHeight.value
   return {
-    left: `${Math.min((item.box.x1 / videoWidth.value) * 100, 96)}%`,
-    top: `${Math.min((item.box.y1 / videoHeight.value) * 100, 92)}%`,
-    width: `${Math.max(((item.box.x2 - item.box.x1) / videoWidth.value) * 100, 4)}%`,
-    height: `${Math.max(((item.box.y2 - item.box.y1) / videoHeight.value) * 100, 6)}%`,
+    left: `${Math.min((item.box.x1 / width) * 100, 96)}%`,
+    top: `${Math.min((item.box.y1 / height) * 100, 92)}%`,
+    width: `${Math.max(((item.box.x2 - item.box.x1) / width) * 100, 4)}%`,
+    height: `${Math.max(((item.box.y2 - item.box.y1) / height) * 100, 6)}%`,
   }
 }
 

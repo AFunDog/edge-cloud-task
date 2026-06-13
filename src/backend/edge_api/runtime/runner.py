@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
-from backend.edge_api.runtime.client import CloudClient, EdgeClient
+from backend.edge_api.runtime.client import CloudClient, EdgeClient, LatestFramePublisher
 from backend.edge_api.runtime.debug import close_debug_window, render_debug_window
 from backend.edge_api.runtime.detector import YoloDetector
 from backend.edge_api.runtime.pose import PoseAnalyzer
@@ -114,14 +114,14 @@ def main() -> None:
     # 上一轮检测结果，供 debug_window 模式复用
     last_detection: DetectionResult | None = None
 
-    def _run_background_detect(frame_copy: object, jpeg_base64: str, device_id: str, task_desc: str) -> None:
+    def _run_background_detect(frame_copy: object, device_id: str, task_desc: str) -> None:
         """后台线程：对当前帧执行 YOLO 检测 + 姿态分析 + 上报"""
         nonlocal last_detection
         acquired = detection_lock.acquire(blocking=False)
         if not acquired:
             return  # 上一轮检测尚未完成，丢弃本帧
         try:
-            result = detector.detect(device_id, frame=frame_copy, image_jpeg_base64=jpeg_base64)
+            result = detector.detect(device_id, frame=frame_copy)
             if "姿态" in task_desc or "pose" in task_desc.lower() or result.model_task == "pose":
                 pose_decision = PoseAnalyzer().analyze(result.detections, (result.frame_width, result.frame_height))
                 result.pose = pose_decision.analysis
@@ -164,10 +164,9 @@ def main() -> None:
 
                         # 检测路径：仅在需要时编码 JPEG + 后台异步执行
                         if frame_index % skip_frames == 0 or last_detection is None:
-                            jpeg_bytes = encode_frame_to_jpeg_base64(frame)
                             threading.Thread(
                                 target=_run_background_detect,
-                                args=(frame.copy(), jpeg_bytes, device_id, task_desc),
+                                args=(frame.copy(), device_id, task_desc),
                                 daemon=True,
                             ).start()
 
@@ -186,53 +185,49 @@ def main() -> None:
             else:
                 # --- 正常模式：原始 BGR 字节推送 + 后台异步检测 ---
                 last_status_at = 0.0
-                publish_ok = 0; publish_fail = 0
-                while True:
-                    frame = camera.read()
-                    height, width = frame.shape[:2]
+                frame_publisher = LatestFramePublisher(
+                    edge_client,
+                    device_id=device_id,
+                    stream_width=settings.edge_stream_width,
+                    jpeg_quality=settings.edge_stream_jpeg_quality,
+                    max_fps=settings.edge_stream_max_fps,
+                ) if publish else None
+                if frame_publisher:
+                    frame_publisher.start()
+                try:
+                    while True:
+                        frame = camera.read()
+                        if frame_publisher:
+                            frame_publisher.submit(frame)
 
-                    # 快路径：原始 BGR 字节直接推送（零中间压缩）
-                    if publish:
-                        fid = uuid4().hex
-                        ok = edge_client.publish_raw_frame(
-                            bgr_bytes=frame.tobytes(),
-                            width=width, height=height,
-                            device_id=device_id,
-                            frame_id=fid,
-                        )
-                        if ok:
-                            publish_ok += 1
-                        else:
-                            publish_fail += 1
-                        if (publish_ok + publish_fail) % 30 == 1:
-                            print(f"[Runner] 已推送 {publish_ok} 帧 (失败 {publish_fail})")
+                        # 定时推送设备状态（~每秒一次）
+                        now = time.monotonic()
+                        if publish and now - last_status_at > 1.0:
+                            edge_client.publish_status(EdgeStatus(
+                                device_id=device_id,
+                                fps=round(frame_publisher.fps if frame_publisher else 0.0, 1),
+                                cpu_percent=12.5,
+                                memory_percent=33.0,
+                                last_seen=datetime.now(timezone.utc),
+                            ))
+                            last_status_at = now
 
-                    # 定时推送设备状态（~每秒一次）
-                    now = time.monotonic()
-                    if publish and now - last_status_at > 1.0:
-                        edge_client.publish_status(EdgeStatus(
-                            device_id=device_id,
-                            fps=round(1.0 / max(now - last_status_at, 1e-6), 1),
-                            cpu_percent=12.5,
-                            memory_percent=33.0,
-                            last_seen=datetime.now(timezone.utc),
-                        ))
-                        last_status_at = now
+                        if frame_index % skip_frames == 0:
+                            threading.Thread(
+                                target=_run_background_detect,
+                                args=(frame.copy(), device_id, task_desc),
+                                daemon=True,
+                            ).start()
 
-                    # 检测路径：后台线程异步执行（仍需 JPEG 给 DetectionResult）
-                    if frame_index % skip_frames == 0:
-                        jpeg_bytes = encode_frame_to_jpeg_base64(frame)
-                        threading.Thread(
-                            target=_run_background_detect,
-                            args=(frame.copy(), jpeg_bytes, device_id, task_desc),
-                            daemon=True,
-                        ).start()
-
-                    if args.once:
-                        break
-                    frame_index += 1
-                    if interval > 0:
-                        time.sleep(interval)
+                        if args.once:
+                            break
+                        frame_index += 1
+                        if interval > 0:
+                            time.sleep(interval)
+                finally:
+                    if frame_publisher:
+                        frame_publisher.close()
+                        print(f"[Runner] 视频推送完成：成功 {frame_publisher.published}，丢弃 {frame_publisher.dropped}，失败 {frame_publisher.failed}")
 
     except KeyboardInterrupt:
         print("已退出。")

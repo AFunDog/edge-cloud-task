@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     edge_camera_height: int = 720
     edge_loop_interval_seconds: float = 0.0
     edge_skip_frames: int = 2
+    edge_stream_width: int = 960
+    edge_stream_jpeg_quality: int = 75
+    edge_stream_max_fps: float = 24.0
     yolo_input_size: int = 640
     yolo_conf_threshold: float = 0.25
     yolo_iou_threshold: float = 0.7

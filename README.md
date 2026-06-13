@@ -53,6 +53,14 @@ npm install
 npm run dev
 ```
 
+也可以用一个 PowerShell 调试脚本同时启动边端后端、前端和摄像头采集器；按 `Ctrl+C` 会一起停止：
+
+```powershell
+.\scripts\start_edge_dev.ps1
+```
+
+实时视频默认由采集器在后台压缩并通过 WebRTC 推送，繁忙时只保留最新帧，避免旧帧堆积造成越来越高的延迟。可在 `.env` 中通过 `EDGE_STREAM_WIDTH`、`EDGE_STREAM_JPEG_QUALITY` 和 `EDGE_STREAM_MAX_FPS` 调整清晰度与流畅度。
+
 边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。系统不做模拟降级：摄像头不可用、模型缺失或 YOLO 依赖缺失都会直接报错。
 
 ```powershell

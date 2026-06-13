@@ -142,11 +142,10 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
 export async function connectWebRTC(
   videoElement: HTMLVideoElement,
   onDimensionReady?: (w: number, h: number) => void,
+  onStateChange?: (connected: boolean) => void,
 ): Promise<{ close: () => void }> {
   console.log('[RTC] 创建 PeerConnection')
-  const pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  })
+  const pc = new RTCPeerConnection()
   let pcId = ''
   let stopped = false
 
@@ -159,7 +158,7 @@ export async function connectWebRTC(
   // 本地 ICE 候选 → 发送给后端
   pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
     if (!event.candidate || !pcId) return
-    fetch(`/api/webrtc/candidate/${pcId}`, {
+    fetch(`${API_BASE_URL}/api/webrtc/candidate/${pcId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event.candidate),
@@ -169,6 +168,7 @@ export async function connectWebRTC(
   // 连接状态变化
   pc.onconnectionstatechange = () => {
     console.log(`[RTC] 连接状态: ${pc.connectionState}`)
+    onStateChange?.(pc.connectionState === 'connected')
   }
 
   // 视频元数据就绪 → 回调尺寸
@@ -183,7 +183,7 @@ export async function connectWebRTC(
 
   // 发送 offer → 后端
   console.log('[RTC] 发送 SDP offer')
-  const resp = await fetch('/api/webrtc/offer', {
+  const resp = await fetch(`${API_BASE_URL}/api/webrtc/offer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -191,6 +191,7 @@ export async function connectWebRTC(
       type: pc.localDescription!.type,
     }),
   })
+  if (!resp.ok) throw new Error(`WebRTC offer failed: HTTP ${resp.status}`)
   const answerData = await resp.json()
   pcId = answerData.pc_id
 
@@ -203,6 +204,7 @@ export async function connectWebRTC(
   return {
     close: () => {
       stopped = true
+      onStateChange?.(false)
       videoElement.srcObject = null
       pc.close()
     },
