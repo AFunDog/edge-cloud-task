@@ -3,75 +3,15 @@ from __future__ import annotations
 import argparse
 import threading
 import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from uuid import uuid4
 
 from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
 from backend.edge_api.runtime.client import CloudClient, EdgeClient, LatestFramePublisher
 from backend.edge_api.runtime.debug import close_debug_window, render_debug_window
 from backend.edge_api.runtime.detector import YoloDetector
-from backend.edge_api.runtime.pose import PoseAnalyzer
+from backend.edge_api.runtime.monitoring import collect_edge_status
+from backend.edge_api.runtime.pipeline import EdgeCycle, EdgePipeline
 from backend.shared.core.config import get_settings
-from backend.shared.domain.models import AgentRequest, DetectionResult, EdgeStatus, ExecutionTarget, PoseAction, ScheduleDecision, TaskComplexity, TaskLog, TaskRequest
-from backend.shared.domain.scheduler import TaskScheduler
-
-
-@dataclass
-class CycleSnapshot:
-    result: object
-    request: TaskRequest
-    decision: object
-    cloud_available: bool
-    summary: str
-    reason: str
-    cloud_fallback: bool = False
-
-
-def _build_mock_cloud_summary(task: str, frame_id: str, pose: object | None) -> str:
-    pose_action = getattr(getattr(pose, "action", None), "value", PoseAction.UNKNOWN.value)
-    if pose is not None and pose_action != PoseAction.UNKNOWN.value:
-        return f"云端模拟结果：{task} 已由边端识别为 {pose_action}，帧 {frame_id} 将在后续接入真实云端分析。"
-    return f"云端模拟结果：{task} 暂未获得稳定姿态判定，帧 {frame_id} 已标记为待云端复核。"
-
-
-def process_frame(*, task: str, offline: bool, detector: YoloDetector, scheduler: TaskScheduler, edge_client: EdgeClient, cloud_client: CloudClient, device_id: str, frame: object | None, publish: bool, cloud_available: bool | None = None, include_image: bool = True, mock_cloud: bool = True) -> CycleSnapshot:
-    if frame is None:
-        raise RuntimeError("未读取到摄像头帧，请检查摄像头权限、索引和占用情况。")
-    encoded_frame = encode_frame_to_jpeg_base64(frame) if include_image else None
-    result = detector.detect(device_id, frame=frame, image_jpeg_base64=encoded_frame)
-    cloud_fallback = False
-    pose_summary: str | None = None
-    if "姿态" in task or "pose" in task.lower() or result.model_task == "pose":
-        pose_decision = PoseAnalyzer().analyze(result.detections, (result.frame_width, result.frame_height))
-        result.pose = pose_decision.analysis
-        pose_summary = f"边端识别到姿态动作：{pose_decision.analysis.action.value}，置信度 {pose_decision.analysis.confidence:.2f}。" if pose_decision.analysis.action != PoseAction.UNKNOWN else "边端未能稳定识别姿态动作，建议转云端复核。"
-        cloud_fallback = pose_decision.analysis.needs_cloud
-    request = TaskRequest(task=task, device_id=device_id, frame_id=result.frame_id)
-    decision = scheduler.decide(request)
-    if cloud_fallback and decision.target == ExecutionTarget.EDGE:
-        decision = ScheduleDecision(target=ExecutionTarget.CLOUD, complexity=TaskComplexity.COMPLEX, reason="边端姿态规则未能稳定匹配结果，转云端模拟复核。")
-    summary = pose_summary or f"{detector.mode}/{detector.task} 检测到 {len(result.detections)} 个目标，YOLO FPS {result.fps:.2f}，调度至 {decision.target.value}。"
-    if cloud_available is None:
-        cloud_available = cloud_client.is_available() if publish and not offline else False
-    print(summary); print(decision.reason)
-    if offline or not publish:
-        return CycleSnapshot(result=result, request=request, decision=decision, cloud_available=cloud_available, summary=summary, reason=decision.reason, cloud_fallback=cloud_fallback)
-    edge_client.publish_status(EdgeStatus(device_id=device_id, fps=result.fps, cpu_percent=12.5, memory_percent=33.0, last_seen=datetime.now(timezone.utc)))
-    edge_client.publish_detection(result)
-    if not cloud_available:
-        if cloud_fallback and mock_cloud:
-            summary = _build_mock_cloud_summary(task, result.frame_id, result.pose)
-        print("云端 API 当前不可用，边端将继续本地运行并跳过上报。")
-        edge_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
-        return CycleSnapshot(result=result, request=request, decision=decision, cloud_available=cloud_available, summary=summary, reason=decision.reason, cloud_fallback=cloud_fallback)
-    cloud_client.publish_status(EdgeStatus(device_id=device_id, fps=result.fps, cpu_percent=12.5, memory_percent=33.0, last_seen=datetime.now(timezone.utc)))
-    cloud_client.publish_detection(result)
-    if decision.target == ExecutionTarget.CLOUD:
-        summary = _build_mock_cloud_summary(task, result.frame_id, result.pose) if mock_cloud or cloud_fallback else cloud_client.ask_agent(AgentRequest(question=task, device_id=device_id, context={"frame_id": result.frame_id})).answer
-    edge_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
-    cloud_client.publish_task_log(TaskLog(task=task, device_id=device_id, target=decision.target, result_summary=summary))
-    return CycleSnapshot(result=result, request=request, decision=decision, cloud_available=cloud_available, summary=summary, reason=decision.reason, cloud_fallback=cloud_fallback)
+from backend.shared.domain.models import DetectionResult
 
 
 def main() -> None:
@@ -85,50 +25,65 @@ def main() -> None:
     parser.add_argument("--interval", type=float, default=None, help="循环采集间隔秒数")
     parser.add_argument("--debug-window", action="store_true", help="打开调试窗口显示画面、数据和标注框")
     parser.add_argument("--skip-frames", type=int, default=None, help="每 N 帧执行一次 YOLO 推理，其余帧复用上次检测框")
-    parser.add_argument("--real-cloud", action="store_true", help="启用真实云端调用，默认使用模拟结果")
+    parser.add_argument("--no-cloud-sync", action="store_true", help="关闭检测结果、状态和任务日志的云端同步")
+    parser.add_argument("--no-cloud-agent", action="store_true", help="关闭复杂任务的云端智能体调用")
     args = parser.parse_args()
-    mock_cloud = not args.real_cloud
     settings = get_settings()
     detector = YoloDetector(settings.yolo_model_path, public_dir=settings.public_dir, imgsz=settings.yolo_input_size, conf_threshold=settings.yolo_conf_threshold, iou_threshold=settings.yolo_iou_threshold)
-    scheduler = TaskScheduler()
     camera_index = settings.edge_camera_index if args.camera_index is None else args.camera_index
     camera_width = settings.edge_camera_width if args.camera_width is None else args.camera_width
     camera_height = settings.edge_camera_height if args.camera_height is None else args.camera_height
     edge_client = EdgeClient(settings.edge_api_base_url)
     cloud_client = CloudClient(settings.cloud_api_base_url)
+    pipeline = EdgePipeline(
+        task=args.task,
+        cloud_client=cloud_client,
+        cloud_sync_enabled=settings.edge_cloud_sync_enabled and not args.no_cloud_sync and not args.offline,
+        cloud_agent_enabled=settings.edge_cloud_agent_enabled and not args.no_cloud_agent,
+        cloud_agent_cooldown_seconds=settings.edge_cloud_agent_cooldown_seconds,
+    )
     interval = settings.edge_loop_interval_seconds if args.interval is None else args.interval
     skip_frames = max(1, settings.edge_skip_frames if args.skip_frames is None else args.skip_frames)
-    cloud_cache_available = False; cloud_cache_checked_at = 0.0; frame_index = 0; last_snapshot: CycleSnapshot | None = None; fps_samples: list[float] = []; last_frame_id = -1; last_frame_time: float | None = None
-    def get_cloud_available() -> bool:
-        nonlocal cloud_cache_available, cloud_cache_checked_at
-        now = time.monotonic()
-        if args.offline:
-            return False
-        if now - cloud_cache_checked_at > 5.0:
-            cloud_cache_available = cloud_client.is_available(); cloud_cache_checked_at = now
-        return cloud_cache_available
+    frame_index = 0; fps_samples: list[float] = []; last_frame_id = -1; last_frame_time: float | None = None
     print(f"使用 YOLO 模型：{detector.model_path}"); print(f"模型任务：{detector.task}"); print(f"推理后端：{detector.mode}，输入尺寸：{settings.yolo_input_size}，检测间隔：{skip_frames} 帧"); print(f"请求摄像头尺寸：{camera_width}x{camera_height}")
 
     # 后台检测锁：防止多个检测线程同时使用 ONNX session
     detection_lock = threading.Lock()
+    cloud_sync_lock = threading.Lock()
     # 上一轮检测结果，供 debug_window 模式复用
     last_detection: DetectionResult | None = None
 
-    def _run_background_detect(frame_copy: object, device_id: str, task_desc: str) -> None:
+    def _run_cloud_sync(cycle: EdgeCycle) -> None:
+        if not cloud_sync_lock.acquire(blocking=False):
+            return
+        try:
+            pipeline.sync_cloud(cycle)
+        finally:
+            cloud_sync_lock.release()
+
+    def _run_background_detect(frame_copy: object, device_id: str, sync_cloud_inline: bool = False) -> None:
         """后台线程：对当前帧执行 YOLO 检测 + 姿态分析 + 上报"""
         nonlocal last_detection
         acquired = detection_lock.acquire(blocking=False)
         if not acquired:
             return  # 上一轮检测尚未完成，丢弃本帧
         try:
-            result = detector.detect(device_id, frame=frame_copy)
-            if "姿态" in task_desc or "pose" in task_desc.lower() or result.model_task == "pose":
-                pose_decision = PoseAnalyzer().analyze(result.detections, (result.frame_width, result.frame_height))
-                result.pose = pose_decision.analysis
-            last_detection = result
-            # 发布检测结果
+            image = (
+                encode_frame_to_jpeg_base64(frame_copy)
+                if pipeline.cloud_sync_enabled and settings.edge_cloud_include_image
+                else None
+            )
+            cycle = pipeline.process(
+                detector.detect(device_id, frame=frame_copy, image_jpeg_base64=image)
+            )
+            last_detection = cycle.detection
             if publish:
-                edge_client.publish_detection(result)
+                edge_client.publish_detection(cycle.detection)
+                edge_client.publish_task_log(cycle.task_log)
+            if sync_cloud_inline:
+                _run_cloud_sync(cycle)
+            else:
+                threading.Thread(target=_run_cloud_sync, args=(cycle,), daemon=True).start()
         except Exception as exc:
             print(f"检测线程异常：{exc}")
         finally:
@@ -136,7 +91,6 @@ def main() -> None:
 
     publish = not args.offline
     device_id = settings.edge_device_id
-    task_desc = args.task
 
     try:
         with CameraSource(camera_index, width=camera_width, height=camera_height) as camera:
@@ -166,7 +120,7 @@ def main() -> None:
                         if frame_index % skip_frames == 0 or last_detection is None:
                             threading.Thread(
                                 target=_run_background_detect,
-                                args=(frame.copy(), device_id, task_desc),
+                                args=(frame.copy(), device_id),
                                 daemon=True,
                             ).start()
 
@@ -203,23 +157,24 @@ def main() -> None:
                         # 定时推送设备状态（~每秒一次）
                         now = time.monotonic()
                         if publish and now - last_status_at > 1.0:
-                            edge_client.publish_status(EdgeStatus(
-                                device_id=device_id,
-                                fps=round(frame_publisher.fps if frame_publisher else 0.0, 1),
-                                cpu_percent=12.5,
-                                memory_percent=33.0,
-                                last_seen=datetime.now(timezone.utc),
-                            ))
+                            status = collect_edge_status(
+                                device_id,
+                                frame_publisher.fps if frame_publisher else 0.0,
+                            )
+                            edge_client.publish_status(status)
+                            pipeline.publish_status(status)
                             last_status_at = now
 
                         if frame_index % skip_frames == 0:
-                            threading.Thread(
+                            detection_thread = threading.Thread(
                                 target=_run_background_detect,
-                                args=(frame.copy(), device_id, task_desc),
+                                args=(frame.copy(), device_id, args.once),
                                 daemon=True,
-                            ).start()
+                            )
+                            detection_thread.start()
 
                         if args.once:
+                            detection_thread.join()
                             break
                         frame_index += 1
                         if interval > 0:

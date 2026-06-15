@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     edge_stream_width: int = 960
     edge_stream_jpeg_quality: int = 75
     edge_stream_max_fps: float = 24.0
+    edge_cloud_sync_enabled: bool = True
+    edge_cloud_agent_enabled: bool = True
+    edge_cloud_agent_cooldown_seconds: float = 10.0
+    edge_cloud_include_image: bool = True
     yolo_input_size: int = 640
     yolo_conf_threshold: float = 0.25
     yolo_iou_threshold: float = 0.7

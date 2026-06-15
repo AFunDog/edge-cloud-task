@@ -37,7 +37,7 @@ python -m venv .venv
 .\.venv\Scripts\uvicorn backend.edge_api.main:app --reload --port 8001
 ```
 
-边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测和 WebRTC 视频发布，关闭 API 时会一并停止采集器。通过 `http://localhost:8001/health` 可以查看内置采集器的运行状态和错误信息。
+边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测、姿态分析、任务调度、WebRTC 视频发布和云端同步，关闭 API 时会一并停止采集器。云端不可用时，本地检测、调度和边端页面仍保持工作。通过 `http://localhost:8001/health` 可以查看采集器、云端同步和智能体调用状态。
 
 另开一个终端启动云端前端开发服务器：
 
@@ -61,7 +61,7 @@ npm run dev
 .\scripts\start_edge_dev.ps1
 ```
 
-实时视频默认由采集器在后台压缩并通过 WebRTC 推送，繁忙时只保留最新帧，避免旧帧堆积造成越来越高的延迟。可在 `.env` 中通过 `EDGE_STREAM_WIDTH`、`EDGE_STREAM_JPEG_QUALITY` 和 `EDGE_STREAM_MAX_FPS` 调整清晰度与流畅度。
+实时视频默认由采集器在后台压缩并通过 WebRTC 推送，繁忙时只保留最新帧，避免旧帧堆积造成越来越高的延迟。检测和云端同步使用独立线程，网络波动不会阻塞本地视频与推理。可在 `.env` 中通过 `EDGE_STREAM_WIDTH`、`EDGE_STREAM_JPEG_QUALITY` 和 `EDGE_STREAM_MAX_FPS` 调整清晰度与流畅度。
 
 边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。摄像头不可用、模型缺失或 YOLO 依赖缺失时，内置采集器会在 `/health` 中报告错误，API 仍保持可用。
 
@@ -82,7 +82,7 @@ npm run dev
 
 边端正式 UI 会显示检测框、类别、置信度、显示 FPS、YOLO FPS、推理耗时、目标数、后端、姿态动作和调度信息；按 `q` 或 `Esc` 退出调试窗口时不会影响后台采集。
 
-姿态识别默认走边端规则分类和模拟云端复核。如果后续云端接口接入完成，可以加上 `--real-cloud` 切换到真实云端调用。
+姿态识别默认先走边端规则分类，低置信度或未知动作会自动调度至云端 Agent 复核。Agent 调用设有冷却时间，避免连续视频帧高频调用模型。云端同步默认携带检测帧预览，供云端管理页展示画面与检测框。可通过 `EDGE_CLOUD_SYNC_ENABLED`、`EDGE_CLOUD_AGENT_ENABLED`、`EDGE_CLOUD_AGENT_COOLDOWN_SECONDS` 和 `EDGE_CLOUD_INCLUDE_IMAGE` 控制该行为；runner 也支持 `--no-cloud-sync` 和 `--no-cloud-agent`。
 
 YOLO 模型放在根目录 `public/` 下，当前运行时只支持 `.onnx`。要切换到姿态检测模型，直接在 `.env` 里设置 `YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose.onnx`，边端会自动识别 `task=pose` 并绘制关键点。
 
@@ -136,7 +136,7 @@ docker compose exec postgres psql -U edge_cloud -d edge_cloud
 \dx
 ```
 
-如需在 Linux 边端容器中运行摄像头采集和 YOLO 检测：
+Docker 中的 `edge` 服务只负责边端 API 和前端数据入口，不直接占用摄像头。需要在 Linux 边端容器中运行摄像头采集、YOLO 检测和云端同步时：
 
 ```powershell
 docker compose --profile edge up --build

@@ -33,15 +33,19 @@ services:
   edge:
     build:
       context: .
-      dockerfile: Dockerfile.cloud
+      dockerfile: Dockerfile.edge
     command: uvicorn backend.edge_api.main:app --host 0.0.0.0 --port 8001
     env_file:
       - path: .env
         required: false
     ports:
       - "8001:8001"
+    environment:
+      EDGE_COLLECTOR_ENABLED: "false"
+      CLOUD_API_BASE_URL: http://cloud:8000
+      PUBLIC_DIR: /app/public
     volumes:
-      - ./data:/app/data
+      - ./public:/app/public:ro
 
   cloud-web:
     build:

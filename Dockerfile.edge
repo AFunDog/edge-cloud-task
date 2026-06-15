@@ -6,6 +6,10 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY public ./public
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir -e .[yolo]
 
 CMD ["python", "-m", "backend.edge_api.runtime.runner"]
