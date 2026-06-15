@@ -17,7 +17,7 @@
 - `backend/edge_api/runtime/client.py`：HTTP 客户端，负责把边端检测结果和复杂任务提交给云端。
 - `backend/edge_api/runtime/collector.py`：随边端 API 生命周期运行的默认入口。本地检测与云端同步使用独立线程，云端不可用时不阻塞采集和推理。
 - `backend/edge_api/runtime/debug.py`：OpenCV 调试窗口，显示采集画面、检测框、显示 FPS、YOLO FPS、推理耗时、目标数量、后端和调度信息。
-- `backend/edge_api/runtime/runner.py`：命令行入口，完成摄像头采集、本地推理、调度、调试窗口显示和上报流程。
+- `backend/edge_api/runtime/runner.py`：可选诊断入口，用于单帧检查和本地调试窗口，不参与边端后端的正式启动流程。
 
 ### 网络层 Network
 

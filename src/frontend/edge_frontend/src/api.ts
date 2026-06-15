@@ -149,6 +149,15 @@ export async function connectWebRTC(
   let pcId = ''
   let stopped = false
   let connectTimer: number | null = null
+  let videoPlaying = false
+
+  const markVideoPlaying = () => {
+    videoPlaying = true
+    if (connectTimer !== null) window.clearTimeout(connectTimer)
+    connectTimer = null
+    onStateChange?.(true)
+  }
+  videoElement.addEventListener('playing', markVideoPlaying)
 
   // 收到远端视频轨道 → 绑定到 <video>
   pc.ontrack = (event: RTCTrackEvent) => {
@@ -170,11 +179,7 @@ export async function connectWebRTC(
   // 连接状态变化
   pc.onconnectionstatechange = () => {
     console.log(`[RTC] 连接状态: ${pc.connectionState}`)
-    if (pc.connectionState === 'connected') {
-      if (connectTimer !== null) window.clearTimeout(connectTimer)
-      connectTimer = null
-      onStateChange?.(true)
-    } else if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
       onStateChange?.(false)
     }
   }
@@ -210,8 +215,8 @@ export async function connectWebRTC(
   )
   console.log('[RTC] 信令协商完成，等待媒体连接')
   connectTimer = window.setTimeout(() => {
-    if (!stopped && pc.connectionState !== 'connected') {
-      console.warn(`[RTC] 连接超时，当前状态: ${pc.connectionState}`)
+    if (!stopped && !videoPlaying) {
+      console.warn(`[RTC] 首帧超时，当前连接状态: ${pc.connectionState}`)
       pc.close()
       onStateChange?.(false)
     }
@@ -221,6 +226,7 @@ export async function connectWebRTC(
     close: () => {
       stopped = true
       if (connectTimer !== null) window.clearTimeout(connectTimer)
+      videoElement.removeEventListener('playing', markVideoPlaying)
       onStateChange?.(false)
       videoElement.srcObject = null
       pc.close()

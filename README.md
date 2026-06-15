@@ -27,17 +27,17 @@ data/postgres/    PostgreSQL 初始化脚本
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\pip install -e .[test]
+.\.venv\Scripts\pip install -e ".[test,yolo]"
 .\.venv\Scripts\uvicorn backend.cloud_api.main:app --reload
 ```
 
-另开一个终端启动边端服务：
+另开一个终端使用一条命令启动边端后端：
 
 ```powershell
-.\.venv\Scripts\uvicorn backend.edge_api.main:app --reload --port 8001
+.\.venv\Scripts\python -m backend.edge_api.main
 ```
 
-边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测、姿态分析、任务调度、WebRTC 视频发布和云端同步，关闭 API 时会一并停止采集器。云端不可用时，本地检测、调度和边端页面仍保持工作。通过 `http://localhost:8001/health` 可以查看采集器、云端同步和智能体调用状态。
+该命令会同时启动边端 API 和内置摄像头采集器，不需要额外启动 runner。激活虚拟环境后也可以直接运行 `python -m backend.edge_api.main`。边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测、姿态分析、任务调度、WebRTC 视频发布和云端同步，关闭 API 时会一并停止采集器。云端不可用时，本地检测、调度和边端页面仍保持工作。通过 `http://localhost:8001/health` 可以查看采集器、云端同步和智能体调用状态。
 
 另开一个终端启动云端前端开发服务器：
 
@@ -65,7 +65,7 @@ npm run dev
 
 边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。摄像头不可用、模型缺失或 YOLO 依赖缺失时，内置采集器会在 `/health` 中报告错误，API 仍保持可用。
 
-独立 runner 仅用于单帧检查或本地调试窗口。运行它之前应在 `.env` 中设置 `EDGE_COLLECTOR_ENABLED=false`，避免与 API 内置采集器争抢摄像头：
+独立 runner 不是边端后端启动所必需的，仅用于单帧检查或本地调试窗口。运行它之前应停止边端后端，或在 `.env` 中设置 `EDGE_COLLECTOR_ENABLED=false`，避免与 API 内置采集器争抢摄像头：
 
 ```powershell
 .\.venv\Scripts\pip install -e .[yolo]
