@@ -5,10 +5,18 @@ export interface BoundingBox {
   y2: number
 }
 
+export interface Keypoint {
+  x: number
+  y: number
+  confidence: number
+  name?: string | null
+}
+
 export interface Detection {
   label: string
   confidence: number
   box: BoundingBox
+  keypoints?: Keypoint[]
 }
 
 export interface PoseAnalysis {

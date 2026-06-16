@@ -1,8 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchState, scheduleTask, sendAgentChat } from './api'
-import type { DetectionResult, SystemState, TaskLog } from './types'
+import type { Detection, DetectionResult, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
+import {
+  COCO_SKELETON,
+  isKeypointVisible,
+  normalizeKeypoint,
+  type NormalizedKeypoint,
+  type SkeletonEdge,
+} from './utils/pose'
 
 const state = ref<SystemState | null>(null)
 const loading = ref(true)
@@ -77,6 +84,36 @@ function boxStyle(item: DetectionResult['detections'][number]): Record<string, s
     width: `${Math.max(((item.box.x2 - item.box.x1) / width) * 100, 4)}%`,
     height: `${Math.max(((item.box.y2 - item.box.y1) / height) * 100, 6)}%`,
   }
+}
+
+// ---------- 姿态关键点与骨架渲染辅助 ----------
+
+interface PoseOverlay {
+  points: NormalizedKeypoint[]
+  edges: SkeletonEdge[]
+}
+
+/** 将单个检测的关键点归一化为容器内百分比，并计算可见骨架边。 */
+function poseOverlay(item: Detection): PoseOverlay {
+  const width = latestDetection.value?.frame_width || 640
+  const height = latestDetection.value?.frame_height || 360
+  const keypoints = item.keypoints ?? []
+  const points = keypoints.map((kpt, index) => normalizeKeypoint(index, kpt, width, height))
+  const edges: SkeletonEdge[] = []
+  for (const [a, b] of COCO_SKELETON) {
+    const ka = keypoints[a]
+    const kb = keypoints[b]
+    if (!isKeypointVisible(ka) || !isKeypointVisible(kb)) continue
+    const na = points[a]
+    const nb = points[b]
+    edges.push({ x1: na.leftPct, y1: na.topPct, x2: nb.leftPct, y2: nb.topPct })
+  }
+  return { points: points.filter((p) => isKeypointVisible(keypoints[p.index])), edges }
+}
+
+function keypointTitle(p: NormalizedKeypoint): string {
+  const name = p.kpt.name ?? `keypoint_${p.index}`
+  return `${name} · ${formatNumber(p.kpt.confidence, 2)}`
 }
 </script>
 
@@ -176,6 +213,28 @@ function boxStyle(item: DetectionResult['detections'][number]): Record<string, s
               >
                 <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
               </div>
+
+              <!-- 姿态骨架与关键点 -->
+              <template v-for="(item, idx) in latestDetection?.detections ?? []" :key="`pose-${idx}`">
+                <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <line
+                    v-for="(edge, ei) in poseOverlay(item).edges"
+                    :key="ei"
+                    :x1="edge.x1"
+                    :y1="edge.y1"
+                    :x2="edge.x2"
+                    :y2="edge.y2"
+                  />
+                </svg>
+                <div
+                  v-for="p in poseOverlay(item).points"
+                  :key="`kpt-${idx}-${p.index}`"
+                  class="kpt"
+                  :class="{ dim: p.dim }"
+                  :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
+                  :title="keypointTitle(p)"
+                ></div>
+              </template>
             </div>
 
             <div class="table-wrap">

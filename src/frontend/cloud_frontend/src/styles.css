@@ -73,6 +73,12 @@ h1 { font-size: clamp(36px, 5vw, 58px); line-height: 0.95; letter-spacing: -0.04
 .detection-tag span { border-radius: 999px; padding: 6px 10px; background: rgba(7, 13, 17, 0.72); border: 1px solid rgba(121, 239, 197, 0.18); }
 .box { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 24px rgba(121, 239, 197, 0.16); }
 .box span { position: absolute; left: -2px; top: -25px; padding: 3px 8px; border-radius: 6px; background: var(--accent); color: #04110c; font-family: 'IBM Plex Mono', monospace; font-size: 12px; white-space: nowrap; }
+
+/* 姿态关键点与骨架 */
+.pose-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.pose-layer line { stroke: var(--accent); stroke-opacity: 0.72; stroke-width: 0.45; stroke-linecap: round; filter: drop-shadow(0 0 2px rgba(121, 239, 197, 0.35)); }
+.kpt { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--accent); box-shadow: 0 0 6px var(--accent); z-index: 3; pointer-events: none; }
+.kpt.dim { background: var(--accent-2); box-shadow: 0 0 6px rgba(243, 176, 126, 0.6); opacity: 0.55; }
 .table-wrap { overflow: auto; }
 .model-line { padding: 12px 16px; color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 12px; word-break: break-all; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }

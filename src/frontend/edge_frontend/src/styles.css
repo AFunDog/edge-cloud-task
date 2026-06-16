@@ -374,6 +374,40 @@ h1 {
   white-space: nowrap;
 }
 
+/* 姿态关键点与骨架 */
+.pose-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pose-layer line {
+  stroke: var(--accent);
+  stroke-opacity: 0.72;
+  stroke-width: 0.45;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 2px rgba(118, 240, 200, 0.35));
+}
+
+.kpt {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.kpt.dim {
+  background: var(--accent-2);
+  box-shadow: 0 0 6px rgba(242, 179, 111, 0.6);
+  opacity: 0.55;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
