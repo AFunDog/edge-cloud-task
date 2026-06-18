@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { connectStream, connectWebRTC, fetchState, scheduleTask } from './api'
+import { connectStream, connectWebRTC, fetchState } from './api'
 import type { Detection, DetectionResult, EdgeStatus, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 import {
@@ -18,14 +18,7 @@ const connected = ref(false)
 const rtcConnected = ref(false)
 const videoWidth = ref(640)
 const videoHeight = ref(360)
-const taskText = ref('姿态识别')
 const deviceId = ref('edge-camera-01')
-const scheduleBusy = ref(false)
-const scheduleResult = ref<{
-  target: string
-  complexity: string
-  reason: string
-} | null>(null)
 
 let streamControl: { close: () => void } | null = null
 let rtcControl: { close: () => void } | null = null
@@ -172,6 +165,7 @@ const latestDetection = computed(() => state.value?.recent_detections[0] ?? null
 const taskLogs = computed(() => state.value?.task_logs ?? [])
 const pose = computed(() => latestDetection.value?.pose ?? null)
 const detections = computed(() => latestDetection.value?.detections ?? [])
+const showVideoAnnotations = computed(() => rtcConnected.value && latestDetection.value !== null)
 const activeAction = computed(() => pose.value?.action ?? 'unknown')
 const cloudHint = computed(() =>
   pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
@@ -243,25 +237,6 @@ function keypointTitle(p: NormalizedKeypoint): string {
   return `${name} · ${formatNumber(p.kpt.confidence, 2)}`
 }
 
-function latestLog(logs: TaskLog[]): TaskLog | null {
-  return logs[0] ?? null
-}
-
-async function submitSchedule(): Promise<void> {
-  try {
-    scheduleBusy.value = true
-    error.value = ''
-    scheduleResult.value = await scheduleTask({
-      task: taskText.value,
-      device_id: deviceId.value,
-      context: { source: 'edge-workbench' },
-    })
-  } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : String(exc)
-  } finally {
-    scheduleBusy.value = false
-  }
-}
 </script>
 
 <template>
@@ -328,7 +303,7 @@ async function submitSchedule(): Promise<void> {
           </div>
           <div class="frame-grid"></div>
 
-          <div v-if="latestDetection" class="frame-chips">
+          <div v-if="showVideoAnnotations && latestDetection" class="frame-chips">
             <span>Frame {{ latestDetection.frame_id }}</span>
             <span>FPS {{ formatNumber(latestDetection.fps) }}</span>
             <span>{{ latestDetection.inference_ms }} ms</span>
@@ -341,11 +316,11 @@ async function submitSchedule(): Promise<void> {
             <span>{{ pose?.confidence ? `置信度 ${formatNumber(pose.confidence, 2)}` : '等待有效姿态' }}</span>
           </div>
 
-          <div v-if="latestDetection" class="cloud-badge">
+          <div v-if="showVideoAnnotations && latestDetection" class="cloud-badge">
             <span>{{ cloudHint }}</span>
           </div>
 
-          <div v-if="latestDetection" class="media-overlay" :style="mediaOverlayStyle">
+          <div v-if="showVideoAnnotations && latestDetection" class="media-overlay" :style="mediaOverlayStyle">
             <template v-for="(item, idx) in detections" :key="`target-${idx}`">
               <div class="box" :style="boxStyle(item, latestDetection)">
                 <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
@@ -399,78 +374,20 @@ async function submitSchedule(): Promise<void> {
       <aside class="panel rail">
         <div class="panel-head">
           <div>
-            <p class="kicker">Control Deck</p>
-            <h2>任务调度与复核</h2>
+            <p class="kicker">Edge Logs</p>
+            <h2>日志卡片列表</h2>
+          </div>
+          <div class="panel-meta">
+            <span v-if="connected" class="live-dot"></span>
+            {{ formatTime(state?.server_time) }}
           </div>
         </div>
 
         <div v-if="error" class="notice error">{{ error }}</div>
         <div v-else-if="loading" class="notice">正在拉取边端状态...</div>
 
-        <div class="field">
-          <span>设备 ID</span>
-          <input v-model="deviceId" type="text" />
-        </div>
-
-        <div class="field">
-          <span>任务描述</span>
-          <textarea v-model="taskText" rows="5"></textarea>
-        </div>
-
-        <button class="action" type="button" :disabled="scheduleBusy" @click="submitSchedule">
-          {{ scheduleBusy ? '调度中...' : '预测调度位置' }}
-        </button>
-
-        <div v-if="scheduleResult" class="result-card">
-          <p class="kicker">Decision</p>
-          <h3>{{ scheduleResult.target }} / {{ scheduleResult.complexity }}</h3>
-          <p>{{ scheduleResult.reason }}</p>
-        </div>
-
-        <div class="result-card accent">
-          <p class="kicker">Pose Rule</p>
-          <h3>{{ pose?.matched_rule || 'no_rule_matched' }}</h3>
-          <p>{{ pose?.reason || '边端正在等待有效姿态动作。' }}</p>
-        </div>
-
-        <div class="evidence">
-          <p class="kicker">Evidence</p>
-          <ul v-if="pose?.evidence?.length">
-            <li v-for="item in pose.evidence" :key="item">{{ item }}</li>
-          </ul>
-          <div v-else class="empty-inline">暂无规则证据。</div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="log-stack">
-          <div class="panel-subhead">
-            <h3>最近任务</h3>
-            <span>{{ formatTime(latestLog(taskLogs)?.created_at) }}</span>
-          </div>
-          <article v-if="latestLog(taskLogs)" class="log-card">
-            <strong>{{ latestLog(taskLogs)?.task }}</strong>
-            <p>{{ latestLog(taskLogs)?.result_summary }}</p>
-            <small>{{ latestLog(taskLogs)?.target }} · {{ latestLog(taskLogs)?.device_id }}</small>
-          </article>
-          <div v-else class="empty-inline">暂无任务日志。</div>
-        </div>
-      </aside>
-
-      <section class="panel panel-wide">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Edge Timeline</p>
-            <h2>边端状态与日志列表</h2>
-          </div>
-          <div class="panel-meta">
-            <span v-if="connected" class="live-dot"></span>
-            Server time: {{ formatTime(state?.server_time) }}
-          </div>
-        </div>
-
-        <div class="timeline">
-          <article v-for="log in taskLogs.slice(0, 6)" :key="log.task_id" class="timeline-item">
+        <div class="log-stack log-scroll">
+          <article v-for="log in taskLogs.slice(0, 12)" :key="log.task_id" class="log-card">
             <div class="timeline-top">
               <strong>{{ log.task }}</strong>
               <span>{{ log.target }}</span>
@@ -478,9 +395,11 @@ async function submitSchedule(): Promise<void> {
             <p>{{ log.result_summary }}</p>
             <small>{{ log.device_id }} · {{ formatTime(log.created_at) }}</small>
           </article>
-          <div v-if="!taskLogs.length" class="empty-inline">边端日志会在这里实时汇总。</div>
+          <div v-if="!taskLogs.length" class="empty-inline">
+            边端日志会在这里实时汇总。
+          </div>
         </div>
-      </section>
+      </aside>
     </main>
   </div>
 </template>
