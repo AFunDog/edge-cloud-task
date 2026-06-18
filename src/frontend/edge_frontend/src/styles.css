@@ -289,6 +289,7 @@ h1 {
 .frame-grid {
   position: absolute;
   inset: 0;
+  z-index: 1;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
@@ -300,7 +301,7 @@ h1 {
   position: absolute;
   left: 16px;
   top: 16px;
-  z-index: 2;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -319,7 +320,7 @@ h1 {
 .cloud-badge {
   position: absolute;
   right: 16px;
-  z-index: 2;
+  z-index: 4;
   display: grid;
   gap: 4px;
   padding: 12px 14px;
@@ -353,8 +354,15 @@ h1 {
   max-width: 280px;
 }
 
+.media-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .box {
   position: absolute;
+  z-index: 2;
   border: 2px solid var(--accent);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.38),
@@ -378,7 +386,7 @@ h1 {
 .pose-layer {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 1;
   pointer-events: none;
 }
 

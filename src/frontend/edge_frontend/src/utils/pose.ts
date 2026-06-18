@@ -19,11 +19,11 @@ export const COCO_SKELETON: ReadonlyArray<readonly [number, number]> = [
   [0, 5], [0, 6],                             // 头-肩
 ]
 
-/** 与后端 PoseAnalyzer.keypoint_threshold 对齐。 */
-export const KEYPOINT_CONFIDENCE_THRESHOLD = 0.35
+/** 前端只绘制较稳定的关键点，避免遮挡部位的低置信度猜测点产生误导连线。 */
+export const KEYPOINT_CONFIDENCE_THRESHOLD = 0.5
 
 /** 低置信度但仍可见（≥阈值）的关键点，前端用更暗的样式呈现。 */
-export const KEYPOINT_DIM_THRESHOLD = 0.5
+export const KEYPOINT_DIM_THRESHOLD = 0.68
 
 export function isKeypointVisible(
   kpt: Keypoint | undefined,

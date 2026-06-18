@@ -33,6 +33,9 @@ let rtcReconnectTimer: number | null = null
 let rtcConnecting = false
 let stopped = false
 const videoRef = ref<HTMLVideoElement | null>(null)
+const frameRef = ref<HTMLElement | null>(null)
+const frameSize = ref({ width: 0, height: 0 })
+let frameResizeObserver: ResizeObserver | null = null
 
 // ---------- 回调 ----------
 
@@ -69,6 +72,19 @@ function applyEdgeStatus(status: EdgeStatus): void {
 function applyTaskLog(log: TaskLog): void {
   if (!state.value) return
   state.value = { ...state.value, task_logs: [log, ...state.value.task_logs.slice(0, 199)] }
+}
+
+function updateFrameSize(): void {
+  if (!frameRef.value) return
+  const rect = frameRef.value.getBoundingClientRect()
+  frameSize.value = { width: rect.width, height: rect.height }
+}
+
+function observeFrameSize(): void {
+  updateFrameSize()
+  if (!frameRef.value) return
+  frameResizeObserver = new ResizeObserver(updateFrameSize)
+  frameResizeObserver.observe(frameRef.value)
 }
 
 // ---------- 初始化 ----------
@@ -132,6 +148,7 @@ function scheduleRtcReconnect(): void {
 
 onMounted(() => {
   stopped = false
+  observeFrameSize()
   openStream()
   void openWebRTC()
   void loadInitialState()
@@ -139,6 +156,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopped = true
+  frameResizeObserver?.disconnect()
+  frameResizeObserver = null
   if (rtcReconnectTimer !== null) window.clearTimeout(rtcReconnectTimer)
   streamControl?.close()
   streamControl = null
@@ -157,6 +176,24 @@ const activeAction = computed(() => pose.value?.action ?? 'unknown')
 const cloudHint = computed(() =>
   pose.value?.needs_cloud ? '边端未能稳定匹配，已进入云端复核候选' : '边端规则命中稳定，可在本地完成',
 )
+const mediaOverlayStyle = computed<Record<string, string>>(() => {
+  const sourceWidth = latestDetection.value?.frame_width || videoWidth.value || 640
+  const sourceHeight = latestDetection.value?.frame_height || videoHeight.value || 360
+  const containerWidth = frameSize.value.width
+  const containerHeight = frameSize.value.height
+  if (sourceWidth <= 0 || sourceHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) {
+    return { left: '0', top: '0', width: '100%', height: '100%' }
+  }
+  const scale = Math.min(containerWidth / sourceWidth, containerHeight / sourceHeight)
+  const mediaWidth = sourceWidth * scale
+  const mediaHeight = sourceHeight * scale
+  return {
+    left: `${(containerWidth - mediaWidth) / 2}px`,
+    top: `${(containerHeight - mediaHeight) / 2}px`,
+    width: `${mediaWidth}px`,
+    height: `${mediaHeight}px`,
+  }
+})
 
 function boxStyle(item: Detection, current: DetectionResult | null): Record<string, string> {
   const width = current?.frame_width || videoWidth.value
@@ -275,7 +312,7 @@ async function submitSchedule(): Promise<void> {
           </div>
         </div>
 
-        <div class="frame">
+        <div ref="frameRef" class="frame">
           <video
             ref="videoRef"
             class="frame-video"
@@ -308,33 +345,35 @@ async function submitSchedule(): Promise<void> {
             <span>{{ cloudHint }}</span>
           </div>
 
-          <template v-for="(item, idx) in detections" :key="`target-${idx}`">
-            <div class="box" :style="boxStyle(item, latestDetection)">
-              <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
-            </div>
+          <div v-if="latestDetection" class="media-overlay" :style="mediaOverlayStyle">
+            <template v-for="(item, idx) in detections" :key="`target-${idx}`">
+              <div class="box" :style="boxStyle(item, latestDetection)">
+                <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
+              </div>
 
-            <!-- 姿态骨架（连线） -->
-            <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <line
-                v-for="(edge, ei) in poseOverlay(item, latestDetection).edges"
-                :key="ei"
-                :x1="edge.x1"
-                :y1="edge.y1"
-                :x2="edge.x2"
-                :y2="edge.y2"
-              />
-            </svg>
+              <!-- 姿态骨架（连线） -->
+              <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line
+                  v-for="(edge, ei) in poseOverlay(item, latestDetection).edges"
+                  :key="ei"
+                  :x1="edge.x1"
+                  :y1="edge.y1"
+                  :x2="edge.x2"
+                  :y2="edge.y2"
+                />
+              </svg>
 
-            <!-- 姿态关键点（圆点） -->
-            <div
-              v-for="p in poseOverlay(item, latestDetection).points"
-              :key="`kpt-${idx}-${p.index}`"
-              class="kpt"
-              :class="{ dim: p.dim }"
-              :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
-              :title="keypointTitle(p)"
-            ></div>
-          </template>
+              <!-- 姿态关键点（圆点） -->
+              <div
+                v-for="p in poseOverlay(item, latestDetection).points"
+                :key="`kpt-${idx}-${p.index}`"
+                class="kpt"
+                :class="{ dim: p.dim }"
+                :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
+                :title="keypointTitle(p)"
+              ></div>
+            </template>
+          </div>
         </div>
 
         <div class="metrics">

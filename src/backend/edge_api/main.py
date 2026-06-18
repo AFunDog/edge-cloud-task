@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -43,6 +45,20 @@ app.include_router(tasks.router)
 
 
 def run() -> None:
+    parser = argparse.ArgumentParser(description="Run the edge API server.")
+    parser.add_argument(
+        "--debug-window",
+        "--debug_window",
+        action="store_true",
+        help="打开本地 OpenCV 调试窗口；该模式会转入 edge runner，不启动 FastAPI 服务。",
+    )
+    args, runner_args = parser.parse_known_args()
+    if args.debug_window:
+        from backend.edge_api.runtime.runner import main as run_edge_runner
+
+        sys.argv = [sys.argv[0], "--debug-window", "--offline", *runner_args]
+        run_edge_runner()
+        return
     uvicorn.run("backend.edge_api.main:app", host="0.0.0.0", port=8001, reload=True)
 
 

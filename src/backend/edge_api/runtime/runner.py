@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import queue
 import threading
 import time
 
@@ -23,11 +24,14 @@ def main() -> None:
     parser.add_argument("--camera-height", type=int, default=None, help="请求摄像头输出高度，默认读取配置")
     parser.add_argument("--once", action="store_true", help="只采集和处理一帧")
     parser.add_argument("--interval", type=float, default=None, help="循环采集间隔秒数")
-    parser.add_argument("--debug-window", action="store_true", help="打开调试窗口显示画面、数据和标注框")
+    parser.add_argument("--debug-window", "--debug_window", action="store_true", help="打开调试窗口显示画面、数据和标注框")
     parser.add_argument("--skip-frames", type=int, default=None, help="每 N 帧执行一次 YOLO 推理，其余帧复用上次检测框")
     parser.add_argument("--no-cloud-sync", action="store_true", help="关闭检测结果、状态和任务日志的云端同步")
     parser.add_argument("--no-cloud-agent", action="store_true", help="关闭复杂任务的云端智能体调用")
     args = parser.parse_args()
+    if args.debug_window and not args.offline:
+        print("调试窗口模式默认只做本地预览，不上报边端或云端；需要完整链路时请启动边端 API 后使用网页工作台。")
+        args.offline = True
     settings = get_settings()
     detector = YoloDetector(settings.yolo_model_path, public_dir=settings.public_dir, imgsz=settings.yolo_input_size, conf_threshold=settings.yolo_conf_threshold, iou_threshold=settings.yolo_iou_threshold)
     camera_index = settings.edge_camera_index if args.camera_index is None else args.camera_index
@@ -50,6 +54,8 @@ def main() -> None:
     # 后台检测锁：防止多个检测线程同时使用 ONNX session
     detection_lock = threading.Lock()
     cloud_sync_lock = threading.Lock()
+    detection_queue: queue.Queue[object | None] = queue.Queue(maxsize=1)
+    detector_stop = threading.Event()
     # 上一轮检测结果，供 debug_window 模式复用
     last_detection: DetectionResult | None = None
 
@@ -89,6 +95,29 @@ def main() -> None:
         finally:
             detection_lock.release()
 
+    def _submit_latest_debug_frame(frame_copy: object) -> None:
+        try:
+            detection_queue.put_nowait(frame_copy)
+        except queue.Full:
+            try:
+                detection_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                detection_queue.put_nowait(frame_copy)
+            except queue.Full:
+                pass
+
+    def _run_debug_detector() -> None:
+        while not detector_stop.is_set():
+            try:
+                frame_copy = detection_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if frame_copy is None:
+                break
+            _run_background_detect(frame_copy, device_id)
+
     publish = not args.offline
     device_id = settings.edge_device_id
 
@@ -100,6 +129,8 @@ def main() -> None:
 
             if args.debug_window:
                 # --- 调试窗口模式：本地渲染优先，检测异步后台执行 ---
+                detector_thread = threading.Thread(target=_run_debug_detector, name="edge-debug-detector", daemon=True)
+                detector_thread.start()
                 try:
                     while True:
                         frame, current_frame_id = camera.read_latest()
@@ -118,11 +149,7 @@ def main() -> None:
 
                         # 检测路径：仅在需要时编码 JPEG + 后台异步执行
                         if frame_index % skip_frames == 0 or last_detection is None:
-                            threading.Thread(
-                                target=_run_background_detect,
-                                args=(frame.copy(), device_id),
-                                daemon=True,
-                            ).start()
+                            _submit_latest_debug_frame(frame.copy())
 
                         display_fps = sum(fps_samples) / len(fps_samples) if fps_samples else 0.0
                         key = render_debug_window(frame, result=last_detection,
@@ -135,6 +162,10 @@ def main() -> None:
                         frame_index += 1
                 except RuntimeError as exc:
                     print(exc)
+                finally:
+                    detector_stop.set()
+                    _submit_latest_debug_frame(None)
+                    detector_thread.join(timeout=2)
 
             else:
                 # --- 正常模式：原始 BGR 字节推送 + 后台异步检测 ---

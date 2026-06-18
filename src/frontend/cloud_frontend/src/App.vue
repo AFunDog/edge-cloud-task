@@ -19,7 +19,10 @@ const deviceId = ref('edge-camera-01')
 const taskText = ref('车辆计数')
 const chatResult = ref<any>(null)
 const scheduleResult = ref<any>(null)
+const stageRef = ref<HTMLElement | null>(null)
+const stageSize = ref({ width: 0, height: 0 })
 let timer: number | null = null
+let stageResizeObserver: ResizeObserver | null = null
 
 async function loadState(): Promise<void> {
   try {
@@ -58,12 +61,28 @@ async function submitSchedule(): Promise<void> {
   }
 }
 
+function updateStageSize(): void {
+  if (!stageRef.value) return
+  const rect = stageRef.value.getBoundingClientRect()
+  stageSize.value = { width: rect.width, height: rect.height }
+}
+
+function observeStageSize(): void {
+  updateStageSize()
+  if (!stageRef.value) return
+  stageResizeObserver = new ResizeObserver(updateStageSize)
+  stageResizeObserver.observe(stageRef.value)
+}
+
 onMounted(async () => {
+  observeStageSize()
   await loadState()
   timer = window.setInterval(loadState, 3000)
 })
 
 onBeforeUnmount(() => {
+  stageResizeObserver?.disconnect()
+  stageResizeObserver = null
   if (timer !== null) {
     window.clearInterval(timer)
   }
@@ -74,6 +93,24 @@ const edgeStatus = computed(() => state.value?.edge_status ?? [])
 const taskLogs = computed(() => state.value?.task_logs ?? [])
 const latestDetection = computed(() => recentDetections.value[0] || null)
 const serverTime = computed(() => formatTime(state.value?.server_time))
+const mediaOverlayStyle = computed<Record<string, string>>(() => {
+  const sourceWidth = latestDetection.value?.frame_width || 640
+  const sourceHeight = latestDetection.value?.frame_height || 360
+  const containerWidth = stageSize.value.width
+  const containerHeight = stageSize.value.height
+  if (sourceWidth <= 0 || sourceHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) {
+    return { left: '0', top: '0', width: '100%', height: '100%' }
+  }
+  const scale = Math.min(containerWidth / sourceWidth, containerHeight / sourceHeight)
+  const mediaWidth = sourceWidth * scale
+  const mediaHeight = sourceHeight * scale
+  return {
+    left: `${(containerWidth - mediaWidth) / 2}px`,
+    top: `${(containerHeight - mediaHeight) / 2}px`,
+    width: `${mediaWidth}px`,
+    height: `${mediaHeight}px`,
+  }
+})
 
 function boxStyle(item: DetectionResult['detections'][number]): Record<string, string> {
   const width = latestDetection.value?.frame_width || 640
@@ -187,7 +224,7 @@ function keypointTitle(p: NormalizedKeypoint): string {
           </div>
 
           <div class="detection-stage">
-            <div class="stage-frame">
+            <div ref="stageRef" class="stage-frame">
               <img
                 v-if="latestDetection?.image_jpeg_base64"
                 class="stage-image"
@@ -205,36 +242,38 @@ function keypointTitle(p: NormalizedKeypoint): string {
                 <span>{{ formatTime(latestDetection.created_at) }}</span>
               </div>
 
-              <div
-                v-for="item in latestDetection?.detections ?? []"
-                :key="`${item.label}-${item.box.x1}-${item.box.y1}`"
-                class="box"
-                :style="boxStyle(item)"
-              >
-                <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
-              </div>
-
-              <!-- 姿态骨架与关键点 -->
-              <template v-for="(item, idx) in latestDetection?.detections ?? []" :key="`pose-${idx}`">
-                <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line
-                    v-for="(edge, ei) in poseOverlay(item).edges"
-                    :key="ei"
-                    :x1="edge.x1"
-                    :y1="edge.y1"
-                    :x2="edge.x2"
-                    :y2="edge.y2"
-                  />
-                </svg>
+              <div v-if="latestDetection" class="media-overlay" :style="mediaOverlayStyle">
                 <div
-                  v-for="p in poseOverlay(item).points"
-                  :key="`kpt-${idx}-${p.index}`"
-                  class="kpt"
-                  :class="{ dim: p.dim }"
-                  :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
-                  :title="keypointTitle(p)"
-                ></div>
-              </template>
+                  v-for="item in latestDetection.detections"
+                  :key="`${item.label}-${item.box.x1}-${item.box.y1}`"
+                  class="box"
+                  :style="boxStyle(item)"
+                >
+                  <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
+                </div>
+
+                <!-- 姿态骨架与关键点 -->
+                <template v-for="(item, idx) in latestDetection.detections" :key="`pose-${idx}`">
+                  <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <line
+                      v-for="(edge, ei) in poseOverlay(item).edges"
+                      :key="ei"
+                      :x1="edge.x1"
+                      :y1="edge.y1"
+                      :x2="edge.x2"
+                      :y2="edge.y2"
+                    />
+                  </svg>
+                  <div
+                    v-for="p in poseOverlay(item).points"
+                    :key="`kpt-${idx}-${p.index}`"
+                    class="kpt"
+                    :class="{ dim: p.dim }"
+                    :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
+                    :title="keypointTitle(p)"
+                  ></div>
+                </template>
+              </div>
             </div>
 
             <div class="table-wrap">

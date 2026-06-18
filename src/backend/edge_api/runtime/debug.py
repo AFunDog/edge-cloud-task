@@ -6,6 +6,7 @@ from backend.shared.domain.models import DetectionResult, ScheduleDecision, Task
 
 WINDOW_NAME = "Edge Debug View"
 POSE_SKELETON = [(5, 7), (7, 9), (6, 8), (8, 10), (5, 6), (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16), (0, 1), (0, 2), (1, 3), (2, 4), (0, 5), (0, 6)]
+KEYPOINT_DISPLAY_THRESHOLD = 0.5
 
 def render_debug_window(frame: Any, *, result: DetectionResult | None = None, request: TaskRequest | None = None, decision: ScheduleDecision | None = None, cloud_available: bool | None = None, display_fps: float | None = None, source_fps: float | None = None, source_size: tuple[int, int] | None = None, wait_for_key: bool = False) -> int | None:
     try:
@@ -71,7 +72,7 @@ def _draw_keypoints(canvas: Any, keypoints: list[Any], point_color: tuple[int, i
     height, width = canvas.shape[:2]
     points: list[tuple[int, int] | None] = []
     for keypoint in keypoints:
-        if getattr(keypoint, "confidence", 0.0) < 0.25:
+        if getattr(keypoint, "confidence", 0.0) < KEYPOINT_DISPLAY_THRESHOLD:
             points.append(None); continue
         x = max(0, min(int(getattr(keypoint, "x", 0.0)), width - 1)); y = max(0, min(int(getattr(keypoint, "y", 0.0)), height - 1))
         points.append((x, y)); cv2.circle(canvas, (x, y), 3, point_color, -1, cv2.LINE_AA)
