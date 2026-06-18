@@ -108,7 +108,8 @@ class YoloDetector:
             all_boxes.extend(boxes); all_confidences.extend(confidences); all_class_ids.extend(class_ids); all_keypoints.extend(keypoints)
         if not all_boxes:
             return [], [], [], []
-        indices = cv2.dnn.NMSBoxes(all_boxes, all_confidences, self.conf_threshold, self.iou_threshold)
+        nms_boxes = [[x1, y1, max(x2 - x1, 0.0), max(y2 - y1, 0.0)] for x1, y1, x2, y2 in all_boxes]
+        indices = cv2.dnn.NMSBoxes(nms_boxes, all_confidences, self.conf_threshold, self.iou_threshold)
         indices = np.asarray(indices).flatten() if len(indices) > 0 else np.array([], dtype=np.int32)
         scale_x = orig_w / self.imgsz; scale_y = orig_h / self.imgsz
         final_boxes=[]; final_confidences=[]; final_class_ids=[]; final_keypoints=[]
@@ -138,19 +139,22 @@ class YoloDetector:
         output_array = np.asarray(output)
         if output_array.ndim == 2:
             output_array = np.expand_dims(output_array, axis=0)
+        if output_array.ndim == 3 and 4 < output_array.shape[1] < output_array.shape[2]:
+            output_array = np.transpose(output_array, (0, 2, 1))
         boxes=[]; confidences=[]; class_ids=[]; keypoints_list=[]
         for pred in output_array[0]:
             if pred.shape[0] < 6:
                 continue
-            x1, y1, x2, y2 = [float(value) for value in pred[:4]]
-            confidence = float(pred[4]); class_id = int(pred[5])
+            decoded = self._decode_prediction(pred)
+            if decoded is None:
+                continue
+            x1, y1, x2, y2, confidence, class_id, raw_keypoints = decoded
             if confidence <= self.conf_threshold:
                 continue
             x1 = float(np.clip(x1, 0, img_width)); y1 = float(np.clip(y1, 0, img_height)); x2 = float(np.clip(x2, 0, img_width)); y2 = float(np.clip(y2, 0, img_height))
             boxes.append([min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)])
             confidences.append(confidence); class_ids.append(class_id)
             keypoints=[]
-            raw_keypoints = pred[6:]
             if raw_keypoints.size >= 3:
                 usable = (raw_keypoints.size // 3) * 3
                 reshaped = np.asarray(raw_keypoints[:usable], dtype=np.float32).reshape(-1, 3)
@@ -158,6 +162,39 @@ class YoloDetector:
                     keypoints.append((float(np.clip(kpt_x, 0, img_width)), float(np.clip(kpt_y, 0, img_height)), float(kpt_conf)))
             keypoints_list.append(keypoints)
         return boxes, confidences, class_ids, keypoints_list
+
+    def _decode_prediction(self, pred: np.ndarray) -> tuple[float, float, float, float, float, int, np.ndarray] | None:
+        if self._looks_like_nms_prediction(pred):
+            x1, y1, x2, y2 = [float(value) for value in pred[:4]]
+            return x1, y1, x2, y2, float(pred[4]), int(round(float(pred[5]))), pred[6:]
+
+        keypoint_values = len(self._keypoint_names) * 3 if self._model_task == "pose" else 0
+        class_count = int(pred.shape[0] - 4 - keypoint_values)
+        if class_count <= 0:
+            return None
+
+        scores = np.asarray(pred[4 : 4 + class_count], dtype=np.float32)
+        class_id = int(np.argmax(scores))
+        confidence = float(scores[class_id])
+        center_x, center_y, width, height = [float(value) for value in pred[:4]]
+        x1 = center_x - width / 2
+        y1 = center_y - height / 2
+        x2 = center_x + width / 2
+        y2 = center_y + height / 2
+        return x1, y1, x2, y2, confidence, class_id, pred[4 + class_count :]
+
+    def _looks_like_nms_prediction(self, pred: np.ndarray) -> bool:
+        if pred.shape[0] < 6:
+            return False
+        class_value = float(pred[5])
+        if not np.isfinite(class_value) or abs(class_value - round(class_value)) > 1e-4:
+            return False
+        if not 0 <= int(round(class_value)) < max(len(self._class_names), 1):
+            return False
+        if self._model_task == "pose" and pred.shape[0] == 4 + len(self._class_names) + len(self._keypoint_names) * 3:
+            return False
+        x1, y1, x2, y2 = [float(value) for value in pred[:4]]
+        return x2 >= x1 and y2 >= y1
 
     def get_class_name(self, class_id: int) -> str:
         return self._class_names[class_id] if 0 <= class_id < len(self._class_names) else f"class_{class_id}"
