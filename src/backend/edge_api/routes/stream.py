@@ -21,6 +21,8 @@ async def stream_detections(websocket: WebSocket) -> None:
                 "edge_status": [s.model_dump(mode="json") for s in snapshot["edge_status"]],
                 "recent_detections": [d.model_dump(mode="json") for d in snapshot["recent_detections"]],
                 "task_logs": [l.model_dump(mode="json") for l in snapshot["task_logs"]],
+                "events": [e.model_dump(mode="json") for e in snapshot["events"]],
+                "analysis_results": [r.model_dump(mode="json") for r in snapshot["analysis_results"]],
             },
         })
 

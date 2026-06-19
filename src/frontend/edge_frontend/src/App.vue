@@ -45,6 +45,8 @@ function applyDetection(detection: DetectionResult): void {
       edge_status: [],
       recent_detections: [detection],
       task_logs: [],
+      events: [],
+      analysis_results: [],
     }
     loading.value = false
     return

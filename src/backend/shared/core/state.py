@@ -2,7 +2,14 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 
-from backend.shared.domain.models import DetectionResult, EdgeStatus, TaskLog
+from backend.shared.domain.models import (
+    CloudAnalysisResponse,
+    DetectionResult,
+    EdgeStatus,
+    EventStatus,
+    SafetyEvent,
+    TaskLog,
+)
 
 
 class RuntimeState:
@@ -11,6 +18,8 @@ class RuntimeState:
         self._edge_status: dict[str, EdgeStatus] = {}
         self._detections: deque[DetectionResult] = deque(maxlen=50)
         self._task_logs: deque[TaskLog] = deque(maxlen=200)
+        self._events: deque[SafetyEvent] = deque(maxlen=200)
+        self._analysis_results: deque[CloudAnalysisResponse] = deque(maxlen=200)
 
     def update_edge_status(self, status: EdgeStatus) -> None:
         with self._lock:
@@ -24,11 +33,30 @@ class RuntimeState:
         with self._lock:
             self._task_logs.appendleft(log)
 
+    def add_event(self, event: SafetyEvent) -> None:
+        with self._lock:
+            self._events.appendleft(event)
+
+    def add_analysis_result(self, result: CloudAnalysisResponse) -> None:
+        with self._lock:
+            self._analysis_results.appendleft(result)
+            for index, event in enumerate(self._events):
+                if event.event_id == result.event_id:
+                    self._events[index] = event.model_copy(update={"status": EventStatus.CLOUD_ANALYZED})
+                    break
+
     def latest_detection(self, device_id: str | None = None) -> DetectionResult | None:
         with self._lock:
             for detection in self._detections:
                 if device_id is None or detection.device_id == device_id:
                     return detection
+        return None
+
+    def latest_event(self, device_id: str | None = None) -> SafetyEvent | None:
+        with self._lock:
+            for event in self._events:
+                if device_id is None or event.device_id == device_id:
+                    return event
         return None
 
     def snapshot(self) -> dict:
@@ -38,6 +66,8 @@ class RuntimeState:
                 "edge_status": list(self._edge_status.values()),
                 "recent_detections": list(self._detections),
                 "task_logs": list(self._task_logs),
+                "events": list(self._events),
+                "analysis_results": list(self._analysis_results),
             }
 
 

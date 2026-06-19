@@ -82,11 +82,42 @@ export interface TaskLog {
   created_at: string
 }
 
+export type EventSeverity = 'info' | 'warning' | 'critical'
+export type EventStatus = 'edge_resolved' | 'cloud_pending' | 'cloud_analyzed'
+
+export interface SafetyEvent {
+  event_id: string
+  event_type: string
+  device_id: string
+  frame_id?: string | null
+  severity: EventSeverity
+  status: EventStatus
+  summary: string
+  evidence: string[]
+  metrics: Record<string, unknown>
+  created_at: string
+}
+
+export interface CloudAnalysisResponse {
+  event_id: string
+  risk_level: EventSeverity
+  conclusion: string
+  reasoning: string[]
+  suggestions: string[]
+  report: string
+  used_search: boolean
+  used_knowledge: boolean
+  traces: string[]
+  created_at: string
+}
+
 export interface SystemState {
   server_time: string
   edge_status: EdgeStatus[]
   recent_detections: DetectionResult[]
   task_logs: TaskLog[]
+  events: SafetyEvent[]
+  analysis_results: CloudAnalysisResponse[]
 }
 
 export interface TaskRequest {

@@ -15,6 +15,18 @@ class TaskComplexity(str, Enum):
     COMPLEX = "complex"
 
 
+class EventSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class EventStatus(str, Enum):
+    EDGE_RESOLVED = "edge_resolved"
+    CLOUD_PENDING = "cloud_pending"
+    CLOUD_ANALYZED = "cloud_analyzed"
+
+
 class PoseAction(str, Enum):
     STANDING = "standing"
     SITTING = "sitting"
@@ -113,6 +125,39 @@ class TaskLog(BaseModel):
     device_id: str
     target: ExecutionTarget
     result_summary: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SafetyEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: uuid4().hex)
+    event_type: str
+    device_id: str
+    frame_id: str | None = None
+    severity: EventSeverity = EventSeverity.INFO
+    status: EventStatus = EventStatus.EDGE_RESOLVED
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    metrics: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class CloudAnalysisRequest(BaseModel):
+    event: SafetyEvent
+    detection: DetectionResult | None = None
+    image_jpeg_base64: str | None = None
+    recent_context: list[dict] = Field(default_factory=list)
+
+
+class CloudAnalysisResponse(BaseModel):
+    event_id: str
+    risk_level: EventSeverity
+    conclusion: str
+    reasoning: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    report: str
+    used_search: bool = False
+    used_knowledge: bool = False
+    traces: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
