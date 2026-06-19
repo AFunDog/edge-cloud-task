@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.cloud_api.cloud.database import initialize_database
 from backend.cloud_api.routes import agent, edge, state, tasks
 from backend.shared.core.config import get_settings
 
-app = FastAPI(title="Cloud Server", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    initialize_database(get_settings())
+    yield
+
+
+app = FastAPI(title="Cloud Server", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

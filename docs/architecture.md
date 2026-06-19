@@ -32,8 +32,8 @@
 
 ### 数据层 Data
 
-- `docker-compose.yml`：提供独立的 PostgreSQL 服务，当前使用 `pgvector/pgvector:pg16` 镜像。
-- `data/postgres/init/001-enable-pgvector.sql`：数据库初始化时自动启用 `vector` 扩展，但不创建业务表、不插入演示数据。
+- `docker-compose.yml`：提供独立的 PostgreSQL 服务，当前使用 `pgvector/pgvector:pg16` 镜像；数据库容器不再挂载初始化 SQL。
+- `backend/cloud_api/cloud/database.py`：云端后端启动时按配置维护 PostgreSQL schema 和 `vector` 扩展，不创建业务表、不插入演示数据。
 - `backend/shared/core/config.py`：统一暴露 PostgreSQL 主机、端口、库名、账号和向量能力开关，供后续云端知识库和任务存储接入。
 
 ### 前端 Frontend
