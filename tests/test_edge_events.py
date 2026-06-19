@@ -109,3 +109,16 @@ def test_event_analyzer_marks_uncertain_pose_for_cloud() -> None:
     uncertain = [event for event in events if event.event_type == "pose_uncertain"]
     assert len(uncertain) == 1
     assert uncertain[0].status is EventStatus.CLOUD_PENDING
+
+
+def test_person_count_changes_are_not_swallowed_by_cooldown() -> None:
+    now = datetime(2026, 6, 19, 8, 0, tzinfo=timezone.utc)
+    analyzer = EdgeEventAnalyzer(EdgeEventAnalyzerConfig(event_cooldown_seconds=60))
+
+    first = analyzer.analyze(_result(detections=[], created_at=now))
+    second = analyzer.analyze(_result(detections=[_person_detection()], created_at=now + timedelta(seconds=1)))
+    third = analyzer.analyze(_result(detections=[], created_at=now + timedelta(seconds=2)))
+
+    assert first[0].metrics["person_count"] == 0
+    assert second[0].metrics["person_count"] == 1
+    assert third[0].metrics["person_count"] == 0

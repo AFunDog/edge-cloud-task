@@ -39,10 +39,23 @@ class CloudAgent:
 
     def analyze_event(self, request: CloudAnalysisRequest) -> CloudAnalysisResponse:
         query = self._event_query(request)
-        knowledge_hits = self.knowledge_base.search(query)
-        search_hits = self.search_tool.search(query)
+        traces: list[str] = []
+        try:
+            knowledge_hits = self.knowledge_base.search(query)
+        except Exception as exc:
+            knowledge_hits = []
+            traces.append(f"knowledge_error={exc}")
+        try:
+            search_hits = self.search_tool.search(query)
+        except Exception as exc:
+            search_hits = []
+            traces.append(f"search_error={exc}")
         prompt = self._build_event_prompt(request, knowledge_hits, search_hits)
-        llm_report = self.llm.generate(prompt)
+        try:
+            llm_report = self.llm.generate(prompt)
+        except Exception as exc:
+            llm_report = "云端大模型暂不可用，已使用规则分析生成降级报告。"
+            traces.append(f"llm_error={exc}")
         risk_level = self._risk_level(request)
         reasoning = self._event_reasoning(request, knowledge_hits, search_hits)
         suggestions = self._event_suggestions(request, risk_level)
@@ -53,6 +66,7 @@ class CloudAgent:
             f"knowledge_hits={len(knowledge_hits)}",
             f"search_hits={len(search_hits)}",
             f"context_items={len(request.recent_context)}",
+            *traces,
         ]
         traces.extend(f"knowledge: {hit}" for hit in knowledge_hits)
         traces.extend(f"search: {hit}" for hit in search_hits)

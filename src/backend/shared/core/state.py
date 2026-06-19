@@ -43,7 +43,12 @@ class RuntimeState:
 
     def add_analysis_result(self, result: CloudAnalysisResponse) -> None:
         with self._lock:
-            self._analysis_results.appendleft(result)
+            for index, existing in enumerate(self._analysis_results):
+                if existing.event_id == result.event_id:
+                    self._analysis_results[index] = result
+                    break
+            else:
+                self._analysis_results.appendleft(result)
             for index, event in enumerate(self._events):
                 if event.event_id == result.event_id:
                     self._events[index] = event.model_copy(update={"status": EventStatus.CLOUD_ANALYZED})

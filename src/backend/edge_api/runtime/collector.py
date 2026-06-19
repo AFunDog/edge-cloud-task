@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import threading
 import time
+from collections import deque
 from typing import Any
 
 from backend.edge_api.routes.webrtc import push_video_ndarray
@@ -39,6 +40,8 @@ class EdgeCollector:
         self._detector_future: concurrent.futures.Future[YoloDetector] | None = None
         self._detection_future: concurrent.futures.Future[EdgeCycle] | None = None
         self._cloud_future: concurrent.futures.Future[None] | None = None
+        self._cloud_queue: deque[EdgeCycle] = deque(maxlen=100)
+        self._cloud_lock = threading.Lock()
         self._video_future: concurrent.futures.Future[None] | None = None
         self.error: str | None = None
         self.running = False
@@ -191,9 +194,18 @@ class EdgeCollector:
         self._submit_cloud_sync(cycle)
 
     def _submit_cloud_sync(self, cycle: EdgeCycle) -> None:
-        if self._cloud_future and not self._cloud_future.done():
-            return
-        self._cloud_future = self._cloud_pool.submit(self._sync_cloud, cycle)
+        with self._cloud_lock:
+            if self._cloud_future and not self._cloud_future.done():
+                self._cloud_queue.append(cycle)
+                return
+            self._cloud_future = self._cloud_pool.submit(self._sync_cloud_queue, cycle)
+
+    def _sync_cloud_queue(self, cycle: EdgeCycle) -> None:
+        current: EdgeCycle | None = cycle
+        while current is not None:
+            self._sync_cloud(current)
+            with self._cloud_lock:
+                current = self._cloud_queue.popleft() if self._cloud_queue else None
 
     def _sync_cloud(self, cycle: EdgeCycle) -> None:
         self._pipeline.sync_cloud(cycle)

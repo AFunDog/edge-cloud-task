@@ -39,3 +39,32 @@ def test_agent_analyzes_cloud_pending_event_without_network() -> None:
     assert "立即" in " ".join(response.suggestions)
     assert response.used_search is True
     assert response.traces
+
+
+class FailingLLM(LLMClient):
+    def generate(self, prompt: str) -> str:
+        raise RuntimeError("llm down")
+
+
+class FailingSearch(SearchTool):
+    def search(self, query: str) -> list[str]:
+        raise RuntimeError("search down")
+
+
+def test_agent_event_analysis_degrades_when_tools_fail() -> None:
+    agent = CloudAgent(FailingLLM(), FailingSearch(), KnowledgeBase(root="missing-knowledge"))
+    event = SafetyEvent(
+        event_type="long_head_down",
+        device_id="edge-1",
+        severity=EventSeverity.WARNING,
+        status=EventStatus.CLOUD_PENDING,
+        summary="连续低头超过阈值。",
+    )
+
+    response = agent.analyze_event(CloudAnalysisRequest(event=event))
+
+    assert response.risk_level is EventSeverity.WARNING
+    assert response.conclusion
+    assert response.suggestions
+    assert any("search_error" in trace for trace in response.traces)
+    assert any("llm_error" in trace for trace in response.traces)

@@ -12,8 +12,9 @@ from backend.shared.domain.models import (
 
 
 class FakeCloudClient:
-    def __init__(self, available: bool = True) -> None:
+    def __init__(self, available: bool = True, analysis_fails: bool = False) -> None:
         self.available = available
+        self.analysis_fails = analysis_fails
         self.detections: list[DetectionResult] = []
         self.logs = []
         self.statuses = []
@@ -41,6 +42,8 @@ class FakeCloudClient:
         return True
 
     def request_cloud_analysis(self, request):
+        if self.analysis_fails:
+            raise RuntimeError("analysis failed")
         self.analysis_requests.append(request)
         return CloudAnalysisResponse(
             event_id=request.event.event_id,
@@ -124,3 +127,17 @@ def test_pipeline_continues_locally_when_cloud_is_offline() -> None:
     assert cycle.cloud_available is False
     assert cycle.cloud_synced is False
     assert "边端保持独立运行" in cycle.cloud_error
+
+
+def test_pipeline_marks_cloud_sync_failed_when_event_analysis_fails() -> None:
+    cloud = FakeCloudClient(analysis_fails=True)
+    pipeline = EdgePipeline(task="姿态识别", cloud_client=cloud, cloud_agent_cooldown_seconds=0)
+    detection = DetectionResult(device_id="edge-1", model_task="pose")
+
+    cycle = pipeline.process(detection)
+    pipeline.sync_cloud(cycle)
+
+    assert cycle.decision.target == ExecutionTarget.CLOUD
+    assert any(event.status is EventStatus.CLOUD_PENDING for event in cycle.events)
+    assert cycle.cloud_synced is False
+    assert "云端事件分析失败" in cycle.cloud_error

@@ -62,3 +62,31 @@ def test_latest_event_can_filter_by_device() -> None:
 
     assert state.latest_event("edge-b").device_id == "edge-b"
     assert state.latest_event("missing") is None
+
+
+def test_analysis_result_updates_by_event_id() -> None:
+    state = RuntimeState()
+    event = SafetyEvent(event_type="pose_uncertain", device_id="edge-a", summary="需要复核")
+    state.add_event(event)
+
+    state.add_analysis_result(
+        CloudAnalysisResponse(
+            event_id=event.event_id,
+            risk_level=EventSeverity.WARNING,
+            conclusion="第一次分析",
+            report="第一次分析",
+        )
+    )
+    state.add_analysis_result(
+        CloudAnalysisResponse(
+            event_id=event.event_id,
+            risk_level=EventSeverity.CRITICAL,
+            conclusion="第二次分析",
+            report="第二次分析",
+        )
+    )
+
+    snapshot = state.snapshot()
+    assert len(snapshot["analysis_results"]) == 1
+    assert snapshot["analysis_results"][0].conclusion == "第二次分析"
+    assert snapshot["events"][0].status is EventStatus.CLOUD_ANALYZED

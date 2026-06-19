@@ -79,16 +79,16 @@ class EdgeEventAnalyzer:
         summary = f"边端当前检测到 {count} 名人员。"
         if count == 0:
             summary = "边端当前未检测到人员。"
-        return self._event(
+        return SafetyEvent(
             event_type="person_count",
-            detection=detection,
+            device_id=detection.device_id,
+            frame_id=detection.frame_id,
             severity=EventSeverity.INFO,
             status=EventStatus.EDGE_RESOLVED,
             summary=summary,
             evidence=[f"person_count={count}"],
             metrics={"person_count": count},
-            now=now,
-            cooldown_key=f"person_count:{count}",
+            created_at=now,
         )
 
     def _pose_event(self, detection: DetectionResult, now: datetime) -> SafetyEvent | None:
