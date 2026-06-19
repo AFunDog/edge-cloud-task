@@ -72,7 +72,7 @@ npm run dev
 .\.venv\Scripts\python -m backend.edge_api.runtime.runner --task "姿态识别" --once
 ```
 
-检测器只加载 `.onnx` 模型并使用 ONNX Runtime，避免额外的导出依赖和运行时分支。
+检测器支持 `.onnx` 和 OpenVINO IR。`.onnx` 使用 ONNX Runtime；OpenVINO 使用 `.xml + .bin`，可直接把 `YOLO_MODEL_PATH` 指向 `.xml` 文件，或指向包含 `.xml` 的 OpenVINO 导出目录。
 
 如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
 
@@ -84,7 +84,15 @@ npm run dev
 
 姿态识别默认先走边端规则分类，低置信度或未知动作会自动调度至云端 Agent 复核。Agent 调用设有冷却时间，避免连续视频帧高频调用模型。云端同步默认携带检测帧预览，供云端管理页展示画面与检测框。可通过 `EDGE_CLOUD_SYNC_ENABLED`、`EDGE_CLOUD_AGENT_ENABLED`、`EDGE_CLOUD_AGENT_COOLDOWN_SECONDS` 和 `EDGE_CLOUD_INCLUDE_IMAGE` 控制该行为；runner 也支持 `--no-cloud-sync` 和 `--no-cloud-agent`。
 
-YOLO 模型放在根目录 `public/` 下，当前运行时只支持 `.onnx`。要切换到姿态检测模型，直接在 `.env` 里设置 `YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose.onnx`，边端会自动识别 `task=pose` 并绘制关键点。
+YOLO 模型放在根目录 `public/` 下，当前运行时支持 `.onnx` 和 OpenVINO `.xml`。要切换到姿态检测模型，直接在 `.env` 里设置 `YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose.onnx`，或设置为 OpenVINO 导出目录/`.xml` 文件，边端会自动识别 `task=pose` 并绘制关键点。
+
+OpenVINO 示例：
+
+```powershell
+YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose_openvino_model
+# 或
+YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose_openvino_model/yolo26n-pose.xml
+```
 
 如果要快速下载官方姿态模型：
 

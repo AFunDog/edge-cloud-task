@@ -46,3 +46,43 @@ def test_decode_nms_output_keeps_xyxy_boxes() -> None:
     assert confidences == pytest.approx([0.8])
     assert class_ids == [0]
     assert keypoints[0][5] == pytest.approx((40.0, 60.0, 0.9))
+
+
+def test_resolve_model_path_accepts_openvino_directory(tmp_path) -> None:
+    model_dir = tmp_path / "yolo_pose_openvino_model"
+    model_dir.mkdir()
+    xml_path = model_dir / "yolo_pose.xml"
+    xml_path.write_text("<xml />", encoding="utf-8")
+
+    detector = object.__new__(YoloDetector)
+
+    assert detector._resolve_model_path(str(model_dir)) == xml_path
+
+
+def test_openvino_metadata_yaml_updates_task_and_names(tmp_path) -> None:
+    xml_path = tmp_path / "yolo_pose.xml"
+    xml_path.write_text("<xml />", encoding="utf-8")
+    (tmp_path / "metadata.yaml").write_text(
+        "\n".join(
+            [
+                "task: pose",
+                "names:",
+                "  0: person",
+                "kpt_names:",
+                "  0:",
+                "    - nose",
+                "    - left_eye",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    detector = _detector_for_decode()
+    detector._model_task = "detect"
+    detector._class_names = ["others"]
+    detector._keypoint_names = []
+
+    detector._apply_openvino_metadata(xml_path)
+
+    assert detector._model_task == "pose"
+    assert detector._class_names == ["person"]
+    assert detector._keypoint_names == ["nose", "left_eye"]

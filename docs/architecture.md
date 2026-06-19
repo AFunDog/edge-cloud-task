@@ -9,7 +9,7 @@
 ### 边端 Edge
 
 - `backend/edge_api/runtime/camera.py`：封装摄像头采集。安装 OpenCV 后从本地摄像头读取画面，读取失败直接报错。
-- `backend/edge_api/runtime/detector.py`：封装 YOLO 检测器。运行时只加载 `.onnx` 并使用 ONNX Runtime；模型缺失或加载失败直接报错，不做模拟降级。
+- `backend/edge_api/runtime/detector.py`：封装 YOLO 检测器。运行时支持 `.onnx`/ONNX Runtime 和 OpenVINO `.xml + .bin`；模型缺失或加载失败直接报错，不做模拟降级。
 - `backend/edge_api/runtime/pose.py`：边端姿态动作判定器。基于人体关键点的几条规则识别站立、坐下、举手和蹲下等基础动作，无法稳定识别时标记为待云端复核。
 - `backend/shared/domain/scheduler.py`：判断任务复杂度。常规目标检测、有人无人、车辆计数在边端完成；语义理解、跨模态检索、异常解释、报告生成转发云端。该调度规则放在领域层，避免云端 API 依赖边端模块。
 - `backend/edge_api/runtime/pipeline.py`：统一组织检测结果、姿态分析、任务调度、任务日志和云端同步，供内置采集器与独立 runner 复用。
@@ -53,7 +53,7 @@
 ## 扩展点
 
 - 真实摄像头：`backend/edge_api/runtime/runner.py` 默认连续采集本机摄像头，`--once` 可只处理一帧；实时窗口使用 `EDGE_SKIP_FRAMES` 跳帧推理并复用上一帧检测框，提高显示帧率。
-- 真实 YOLO：将模型放入根目录 `public/`，或配置 `YOLO_MODEL_PATH`，并安装 `.[yolo]`。
+- 真实 YOLO：将 `.onnx` 或 OpenVINO 导出目录放入根目录 `public/`，或配置 `YOLO_MODEL_PATH`，并安装 `.[yolo]`。
 - 向量数据库：优先复用当前 PostgreSQL + `pgvector`，把 `KnowledgeBase.search()` 从关键词匹配扩展为 embedding 存储与近邻检索。
 - 联网搜索：实现 `SearchTool.search()` 的真实供应商适配。
 - 大模型：实现 `LLMClient.generate()` 的具体 API 适配。

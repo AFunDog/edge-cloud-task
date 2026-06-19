@@ -30,6 +30,8 @@ class YoloDetector:
         self._onnx_session: Any | None = None
         self._onnx_input_name = ""
         self._onnx_output_names: list[str] = []
+        self._openvino_compiled_model: Any | None = None
+        self._openvino_input: Any | None = None
         self._load_backend()
 
     @property
@@ -42,24 +44,35 @@ class YoloDetector:
     def _resolve_model_path(self, model_path: str) -> Path:
         if model_path:
             explicit = Path(model_path)
+            if explicit.is_dir():
+                xml_candidates = sorted(explicit.rglob("*.xml"))
+                if xml_candidates:
+                    return xml_candidates[0]
             if explicit.exists():
                 return explicit
             sibling_onnx = explicit.with_suffix(".onnx")
             if sibling_onnx.exists():
                 return sibling_onnx
+            sibling_xml = explicit.with_suffix(".xml")
+            if sibling_xml.exists():
+                return sibling_xml
             raise FileNotFoundError(f"YOLO 模型不存在：{explicit}")
         candidates: list[Path] = []
         if self.public_dir.exists():
             candidates.extend(sorted(self.public_dir.rglob("*.onnx")))
+            candidates.extend(sorted(self.public_dir.rglob("*.xml")))
         if not candidates:
-            raise FileNotFoundError("根目录 public/ 下未找到 YOLO 模型文件，请放入 .onnx 文件。")
+            raise FileNotFoundError("根目录 public/ 下未找到 YOLO 模型文件，请放入 .onnx 或 OpenVINO .xml 文件。")
         return candidates[0]
 
     def _load_backend(self) -> None:
         if self._model_path.suffix.lower() == ".onnx":
             self._load_onnxruntime(self._model_path)
             return
-        raise RuntimeError(f"不支持的 YOLO 模型格式：{self._model_path}，当前仅支持 .onnx")
+        if self._model_path.suffix.lower() == ".xml":
+            self._load_openvino(self._model_path)
+            return
+        raise RuntimeError(f"不支持的 YOLO 模型格式：{self._model_path}，当前支持 .onnx 和 OpenVINO .xml")
 
     def _load_onnxruntime(self, onnx_path: Path) -> None:
         try:
@@ -75,6 +88,26 @@ class YoloDetector:
         self._class_names = self._parse_names(metadata.get("names"), fallback=self._class_names)
         self._keypoint_names = self._parse_keypoint_names(metadata.get("kpt_names"), fallback=self._keypoint_names)
         self._backend = "onnxruntime"
+
+    def _load_openvino(self, xml_path: Path) -> None:
+        try:
+            try:
+                from openvino import Core
+            except Exception:
+                from openvino.runtime import Core
+        except Exception as exc:
+            raise RuntimeError(f"OpenVINO Runtime 未安装，无法加载 {xml_path}：{exc}") from exc
+        core = Core()
+        model = core.read_model(str(xml_path))
+        compiled_model = core.compile_model(model, "AUTO")
+        self._openvino_compiled_model = compiled_model
+        self._openvino_input = compiled_model.input(0)
+        self._apply_openvino_metadata(xml_path)
+        if "pose" in xml_path.stem.lower() or "pose" in xml_path.parent.name.lower():
+            self._model_task = "pose"
+            if self._class_names == DEFAULT_CLASS_NAMES:
+                self._class_names = ["person"]
+        self._backend = "openvino"
 
     def detect(self, device_id: str, frame: Any | None = None, image_jpeg_base64: str | None = None) -> DetectionResult:
         if frame is None:
@@ -124,13 +157,18 @@ class YoloDetector:
     def _preprocess_frame(self, frame: Any) -> np.ndarray:
         import cv2
         image = cv2.resize(frame, (self.imgsz, self.imgsz))
-        if self._backend == "onnxruntime":
+        if self._backend in {"onnxruntime", "openvino"}:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = image.astype(np.float32) / 255.0
         image = np.transpose(image, (2, 0, 1))
         return np.expand_dims(image, axis=0)
 
     def _run_detector(self, img_input: np.ndarray) -> list[np.ndarray]:
+        if self._backend == "openvino":
+            if self._openvino_compiled_model is None or self._openvino_input is None:
+                raise RuntimeError("OpenVINO compiled model 未初始化。")
+            result = self._openvino_compiled_model({self._openvino_input: img_input})
+            return [np.asarray(value) for value in result.values()]
         if self._onnx_session is None:
             raise RuntimeError("ONNX Runtime session 未初始化。")
         return self._onnx_session.run(self._onnx_output_names, {self._onnx_input_name: img_input})
@@ -233,3 +271,74 @@ class YoloDetector:
         if isinstance(parsed, list):
             return [str(item) for item in parsed] or fallback
         return fallback
+
+    def _apply_openvino_metadata(self, xml_path: Path) -> None:
+        metadata_path = xml_path.with_name("metadata.yaml")
+        if not metadata_path.exists():
+            return
+        text = metadata_path.read_text(encoding="utf-8", errors="ignore")
+        task = self._parse_yaml_scalar(text, "task")
+        if task:
+            self._model_task = task
+        names = self._parse_yaml_mapping_or_list(text, "names")
+        if names:
+            self._class_names = names
+        kpt_names = self._parse_yaml_mapping_or_list(text, "kpt_names")
+        if kpt_names:
+            self._keypoint_names = kpt_names
+
+    def _parse_yaml_scalar(self, text: str, key: str) -> str:
+        prefix = f"{key}:"
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(prefix):
+                return stripped[len(prefix):].strip().strip("'\"")
+        return ""
+
+    def _parse_yaml_mapping_or_list(self, text: str, key: str) -> list[str]:
+        prefix = f"{key}:"
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped.startswith(prefix):
+                continue
+            inline = stripped[len(prefix):].strip()
+            if inline:
+                parsed = self._safe_literal(inline)
+                return self._names_from_metadata(parsed)
+            block: list[str] = []
+            base_indent = len(line) - len(line.lstrip())
+            for child in lines[index + 1:]:
+                if not child.strip():
+                    continue
+                indent = len(child) - len(child.lstrip())
+                if indent <= base_indent:
+                    break
+                child_text = child.strip()
+                if ":" in child_text:
+                    _, value = child_text.split(":", 1)
+                    cleaned = value.strip().strip("'\"")
+                    if cleaned:
+                        block.append(cleaned)
+                elif child_text.startswith("-"):
+                    block.append(child_text[1:].strip().strip("'\""))
+            return block
+        return []
+
+    def _safe_literal(self, value: str) -> Any:
+        try:
+            return ast.literal_eval(value)
+        except Exception:
+            return value
+
+    def _names_from_metadata(self, parsed: Any) -> list[str]:
+        if isinstance(parsed, dict):
+            first = next(iter(parsed.values()), None)
+            if isinstance(first, list):
+                return [str(item) for item in first]
+            return [str(name) for _, name in sorted(parsed.items(), key=lambda item: int(item[0]))]
+        if isinstance(parsed, list):
+            if parsed and isinstance(parsed[0], list):
+                return [str(item) for item in parsed[0]]
+            return [str(item) for item in parsed]
+        return []
