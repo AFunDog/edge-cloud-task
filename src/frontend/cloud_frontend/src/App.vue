@@ -77,7 +77,7 @@ function observeStageSize(): void {
 onMounted(async () => {
   observeStageSize()
   await loadState()
-  timer = window.setInterval(loadState, 3000)
+  timer = window.setInterval(loadState, 1500)
 })
 
 onBeforeUnmount(() => {
@@ -127,14 +127,11 @@ function boxStyle(item: DetectionResult['detections'][number]): Record<string, s
   }
 }
 
-// ---------- 姿态关键点与骨架渲染辅助 ----------
-
 interface PoseOverlay {
   points: NormalizedKeypoint[]
   edges: SkeletonEdge[]
 }
 
-/** 将单个检测的关键点归一化为容器内百分比，并计算可见骨架边。 */
 function poseOverlay(item: Detection): PoseOverlay {
   const width = latestDetection.value?.frame_width || 640
   const height = latestDetection.value?.frame_height || 360
@@ -160,282 +157,230 @@ function keypointTitle(p: NormalizedKeypoint): string {
 
 <template>
   <div class="shell">
-    <div class="mesh mesh-a"></div>
-    <div class="mesh mesh-b"></div>
-    <div class="mesh mesh-c"></div>
+    <!-- Error bar -->
+    <div v-if="error" class="error-bar">{{ error }}</div>
 
-    <header class="masthead">
-      <div class="masthead-copy">
-        <p class="eyebrow">Cloud Station</p>
-        <h1>云端协同控制台</h1>
-        <p class="lede">
-          汇总边端检测、智能体复核和任务调度结果。云端侧负责全局观察，边端侧继续保持实时采集与本地推理。
-        </p>
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="logo">
+          <span class="logo-dot"></span>
+          <span>Cloud Station</span>
+        </div>
+        <nav class="tab-group">
+          <button class="tab-btn" :class="{ active: activeTab === 'home' }" @click="activeTab = 'home'">监控</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">智能体</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">日志</button>
+        </nav>
       </div>
-
-      <div class="top-strip">
-        <article class="strip-card">
-          <span>Cloud</span>
-          <strong :class="error ? 'warn' : 'ok'">{{ cloudStatus }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Edges</span>
-          <strong>{{ onlineEdgeCount }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Latest</span>
-          <strong>{{ latestDetection ? latestDetection.detections.length : 0 }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Targets</span>
-          <strong>{{ totalDetectionCount }}</strong>
-        </article>
+      <div class="topbar-right">
+        <div class="status-pill" :class="{ offline: !!error }">
+          <span class="pulse"></span>
+          {{ cloudStatus }}
+        </div>
+        <span class="server-time">{{ serverTime }}</span>
       </div>
     </header>
 
-    <nav class="tabbar" aria-label="云端控制台标签页">
-      <button type="button" :class="{ active: activeTab === 'home' }" @click="activeTab = 'home'">
-        <span>主页</span>
-        <small>状态与检测</small>
-      </button>
-      <button type="button" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">
-        <span>设置</span>
-        <small>智能体与调度</small>
-      </button>
-      <button type="button" :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">
-        <span>日志</span>
-        <small>任务记录</small>
-      </button>
-    </nav>
-
-    <main class="layout">
-      <section v-if="activeTab === 'home'" class="panel viewport">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Live State</p>
-            <h2>边端状态与实时检测</h2>
+    <!-- Home -->
+    <main v-if="activeTab === 'home'" class="main main-home">
+      <!-- Detection viewport -->
+      <div class="viewport">
+        <div ref="stageRef" class="frame-wrap">
+          <img
+            v-if="latestDetection?.image_jpeg_base64"
+            class="frame-image"
+            :src="`data:image/jpeg;base64,${latestDetection.image_jpeg_base64}`"
+            alt="edge camera frame"
+          />
+          <div v-else class="frame-placeholder">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <strong>等待边端快照</strong>
+            <span>云端每 1.5 秒刷新状态，画面由边端检测周期压缩后上报。</span>
           </div>
-          <div class="panel-meta">
-            <span v-if="!error" class="live-dot"></span>
-            Server time: {{ serverTime }}
+
+          <!-- HUD overlay -->
+          <div v-if="latestDetection" class="frame-hud">
+            <span class="hud-tag">#{{ latestDetection.frame_id }}</span>
+            <span class="hud-tag">{{ formatNumber(latestDetection.fps) }} FPS</span>
+            <span class="hud-tag">{{ formatNumber(latestDetection.inference_ms, 1) }}ms</span>
+            <span class="hud-tag">{{ latestDetection.backend || '--' }}</span>
+            <span class="hud-tag">{{ formatTime(latestDetection.created_at) }}</span>
+          </div>
+
+          <!-- Pose badge -->
+          <div v-if="latestDetection?.pose" class="pose-alert" :class="latestDetection.pose.needs_cloud ? 'candidate' : 'stable'">
+            <span>{{ latestDetection.pose.action }}</span>
+            <span style="opacity:0.6;font-weight:400">{{ latestDetection.pose.needs_cloud ? '需复核' : '稳定' }}</span>
+          </div>
+
+          <!-- Detection boxes + pose -->
+          <div v-if="latestDetection" class="media-overlay" :style="mediaOverlayStyle">
+            <template v-for="(item, idx) in latestDetection.detections" :key="`pose-${idx}`">
+              <div class="box" :style="boxStyle(item)">
+                <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
+              </div>
+              <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <line
+                  v-for="(edge, ei) in poseOverlay(item).edges"
+                  :key="ei"
+                  :x1="edge.x1" :y1="edge.y1"
+                  :x2="edge.x2" :y2="edge.y2"
+                />
+              </svg>
+              <div
+                v-for="p in poseOverlay(item).points"
+                :key="`kpt-${idx}-${p.index}`"
+                class="kpt"
+                :class="{ dim: p.dim }"
+                :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
+                :title="keypointTitle(p)"
+              ></div>
+            </template>
           </div>
         </div>
 
-        <div v-if="loading" class="notice">正在拉取系统状态...</div>
-        <div v-else-if="error" class="notice error">{{ error }}</div>
+        <!-- Bottom: detection table -->
+        <div class="bottom-bar">
+          <div class="det-table-wrap">
+            <div class="det-table-title">最近检测结果</div>
+            <table v-if="latestDetection?.detections?.length" class="det-table">
+              <thead>
+                <tr><th>Label</th><th>Conf</th><th>Box</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in latestDetection.detections" :key="`${item.label}-${item.confidence}`">
+                  <td class="label-cell">{{ item.label }}</td>
+                  <td>{{ formatNumber(item.confidence, 2) }}</td>
+                  <td>{{ item.box.x1.toFixed(0) }}, {{ item.box.y1.toFixed(0) }}, {{ item.box.x2.toFixed(0) }}, {{ item.box.y2.toFixed(0) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="latestDetection?.model_path" class="model-path">{{ latestDetection.model_path }}</div>
+            <div v-if="!latestDetection?.detections?.length" class="no-data">暂无检测结果</div>
+          </div>
+        </div>
+      </div>
 
-        <div class="home-grid">
-          <aside class="side-stack">
-            <article class="result-card accent">
-              <p class="kicker">Overview</p>
-              <h3>{{ cloudStatus }}</h3>
-              <p>在线边端 {{ onlineEdgeCount }} 台，最近缓存 {{ recentDetections.length }} 帧，总目标 {{ totalDetectionCount }} 个。</p>
-            </article>
-
-            <div v-if="edgeStatus.length" class="status-list">
-              <article v-for="device in edgeStatus" :key="device.device_id" class="status-card">
-                <div class="timeline-top">
-                  <strong>{{ device.device_id }}</strong>
-                  <span :class="device.online ? 'ok' : 'warn'">{{ device.online ? 'ONLINE' : 'OFFLINE' }}</span>
-                </div>
-                <div class="status-stats">
-                  <span>FPS {{ formatNumber(device.fps) }}</span>
-                  <span>CPU {{ formatNumber(device.cpu_percent) }}%</span>
-                  <span>MEM {{ formatNumber(device.memory_percent) }}%</span>
-                </div>
-                <small>{{ device.network }} · {{ formatTime(device.last_seen) }}</small>
-              </article>
+      <!-- Right sidebar -->
+      <aside class="sidebar">
+        <!-- Metrics -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">实时指标</div>
+          <div class="metric-grid">
+            <div class="metric-card">
+              <div class="metric-label">检测目标</div>
+              <div class="metric-value">{{ latestDetection ? latestDetection.detections.length : 0 }}</div>
             </div>
-            <div v-else class="empty-inline">暂无边端在线。</div>
-          </aside>
-
-          <div class="detection-stage">
-            <div ref="stageRef" class="frame">
-              <img
-                v-if="latestDetection?.image_jpeg_base64"
-                class="frame-image"
-                :src="`data:image/jpeg;base64,${latestDetection.image_jpeg_base64}`"
-                alt="edge camera frame"
-              />
-              <div v-else class="frame-placeholder">
-                <div>
-                  <p>等待边端摄像头画面</p>
-                  <span>检测数据会先进入云端状态缓存，画面预览取决于边端是否同步帧图像。</span>
-                </div>
-              </div>
-              <div class="frame-grid"></div>
-
-              <div v-if="latestDetection" class="frame-chips">
-                <span>Frame {{ latestDetection.frame_id }}</span>
-                <span>FPS {{ formatNumber(latestDetection.fps) }}</span>
-                <span>{{ formatNumber(latestDetection.inference_ms, 1) }} ms</span>
-                <span>{{ latestDetection.backend || '--' }}</span>
-                <span>{{ formatTime(latestDetection.created_at) }}</span>
-              </div>
-
-              <div v-if="latestDetection?.pose" class="pose-badge" :class="{ alert: latestDetection.pose.needs_cloud }">
-                <strong>{{ latestDetection.pose.action }}</strong>
-                <span>{{ latestDetection.pose.needs_cloud ? '云端复核候选' : '边端规则稳定' }}</span>
-              </div>
-
-              <div v-if="latestDetection" class="media-overlay" :style="mediaOverlayStyle">
-                <template v-for="(item, idx) in latestDetection.detections" :key="`pose-${idx}`">
-                  <div
-                    class="box"
-                    :style="boxStyle(item)"
-                  >
-                    <span>{{ item.label }} {{ formatNumber(item.confidence, 2) }}</span>
-                  </div>
-                  <svg class="pose-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line
-                      v-for="(edge, ei) in poseOverlay(item).edges"
-                      :key="ei"
-                      :x1="edge.x1"
-                      :y1="edge.y1"
-                      :x2="edge.x2"
-                      :y2="edge.y2"
-                    />
-                  </svg>
-                  <div
-                    v-for="p in poseOverlay(item).points"
-                    :key="`kpt-${idx}-${p.index}`"
-                    class="kpt"
-                    :class="{ dim: p.dim }"
-                    :style="{ left: `${p.leftPct}%`, top: `${p.topPct}%` }"
-                    :title="keypointTitle(p)"
-                  ></div>
-                </template>
-              </div>
+            <div class="metric-card">
+              <div class="metric-label">推理耗时</div>
+              <div class="metric-value small">{{ latestDetection ? `${formatNumber(latestDetection.inference_ms, 1)}ms` : '--' }}</div>
             </div>
-
-            <div class="metrics">
-              <article class="metric">
-                <span>检测目标</span>
-                <strong>{{ latestDetection ? latestDetection.detections.length : 0 }}</strong>
-              </article>
-              <article class="metric">
-                <span>推理耗时</span>
-                <strong>{{ latestDetection ? `${formatNumber(latestDetection.inference_ms, 1)} ms` : '--' }}</strong>
-              </article>
-              <article class="metric">
-                <span>模型任务</span>
-                <strong>{{ latestDetection?.model_task || '--' }}</strong>
-              </article>
-              <article class="metric">
-                <span>设备</span>
-                <strong>{{ latestDetection?.device_id || deviceId }}</strong>
-              </article>
+            <div class="metric-card">
+              <div class="metric-label">快照数</div>
+              <div class="metric-value">{{ recentDetections.length }}</div>
             </div>
-
-            <div class="table-wrap log-scroll">
-              <table v-if="latestDetection?.detections?.length">
-                <thead>
-                  <tr>
-                    <th>Label</th>
-                    <th>Confidence</th>
-                    <th>Box</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in latestDetection.detections" :key="`${item.label}-${item.confidence}`">
-                    <td>{{ item.label }}</td>
-                    <td>{{ formatNumber(item.confidence, 2) }}</td>
-                    <td>
-                      {{ item.box.x1.toFixed(0) }}, {{ item.box.y1.toFixed(0) }},
-                      {{ item.box.x2.toFixed(0) }}, {{ item.box.y2.toFixed(0) }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-if="latestDetection" class="model-line">
-                {{ latestDetection.model_path || 'model path unavailable' }}
-              </div>
-              <div v-else class="empty-inline">当前没有检测结果。</div>
+            <div class="metric-card">
+              <div class="metric-label">总目标</div>
+              <div class="metric-value">{{ totalDetectionCount }}</div>
             </div>
           </div>
         </div>
-      </section>
 
-      <section v-else-if="activeTab === 'settings'" class="panel settings-panel">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Agent Console</p>
-            <h2>云端智能体与调度</h2>
-          </div>
-          <div class="panel-meta">使用当前最新检测上下文</div>
-        </div>
-
-        <div v-if="error" class="notice error">{{ error }}</div>
-
-        <div class="settings-grid">
-          <div class="settings-form">
-            <label class="field">
-              <span>设备 ID</span>
-              <input v-model="deviceId" type="text" />
-            </label>
-
-            <label class="field">
-              <span>问题</span>
-              <textarea v-model="chatQuestion" rows="6"></textarea>
-            </label>
-
-            <button class="action" type="button" @click="submitChat">发送到云端智能体</button>
-
-            <div class="divider"></div>
-
-            <label class="field">
-              <span>任务描述</span>
-              <input v-model="taskText" type="text" />
-            </label>
-
-            <button class="action secondary" type="button" @click="submitSchedule">预测调度位置</button>
-          </div>
-
-          <div class="settings-result">
-            <div v-if="chatResult" class="result-card accent">
-              <p class="kicker">Answer</p>
-              <h3>智能体回复</h3>
-              <p>{{ chatResult.answer }}</p>
+        <!-- Model info -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">模型信息</div>
+          <div class="metric-grid">
+            <div class="metric-card" style="grid-column:1/-1">
+              <div class="metric-label">任务</div>
+              <div class="metric-value small">{{ latestDetection?.model_task || '--' }}</div>
             </div>
-            <div v-else class="empty-inline">智能体回复会显示在这里。</div>
-
-            <div v-if="chatResult?.traces?.length" class="evidence">
-              <p class="kicker">Traces</p>
-              <ul>
-                <li v-for="trace in chatResult.traces" :key="trace">{{ trace }}</li>
-              </ul>
-            </div>
-
-            <div v-if="scheduleResult" class="result-card">
-              <p class="kicker">Schedule</p>
-              <h3>{{ scheduleResult.target }} / {{ scheduleResult.complexity }}</h3>
-              <p>{{ scheduleResult.reason }}</p>
+            <div class="metric-card" style="grid-column:1/-1">
+              <div class="metric-label">设备</div>
+              <div class="metric-value small">{{ latestDetection?.device_id || deviceId }}</div>
             </div>
           </div>
         </div>
-      </section>
 
-      <section v-else class="panel logs-panel">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Operations Log</p>
-            <h2>任务日志</h2>
+        <!-- Edge devices -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">边端设备 · {{ onlineEdgeCount }} 在线</div>
+          <div v-if="edgeStatus.length" class="device-list">
+            <div v-for="device in edgeStatus" :key="device.device_id" class="device-item">
+              <span class="device-name">{{ device.device_id }}</span>
+              <span class="device-status" :class="device.online ? 'on' : 'off'">{{ device.online ? 'ON' : 'OFF' }}</span>
+              <div class="device-stats">
+                <span>FPS {{ formatNumber(device.fps) }}</span>
+                <span>CPU {{ formatNumber(device.cpu_percent) }}%</span>
+                <span>MEM {{ formatNumber(device.memory_percent) }}%</span>
+              </div>
+              <div class="device-meta">{{ device.network }} · {{ formatTime(device.last_seen) }}</div>
+            </div>
           </div>
-          <div class="panel-meta">{{ taskLogs.length }} records</div>
+          <div v-else class="no-data">暂无边端在线</div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Settings -->
+    <main v-else-if="activeTab === 'settings'" class="main main-settings">
+      <div class="settings-page">
+        <div class="settings-form">
+          <div class="field">
+            <label class="field-label">设备 ID</label>
+            <input class="field-input" v-model="deviceId" type="text" />
+          </div>
+          <div class="field">
+            <label class="field-label">问题</label>
+            <textarea class="field-textarea" v-model="chatQuestion" rows="5"></textarea>
+          </div>
+          <button class="btn btn-primary" type="button" @click="submitChat">发送到云端智能体</button>
+          <div style="height:1px;background:var(--border);margin:4px 0"></div>
+          <div class="field">
+            <label class="field-label">任务描述</label>
+            <input class="field-input" v-model="taskText" type="text" />
+          </div>
+          <button class="btn btn-secondary" type="button" @click="submitSchedule">预测调度位置</button>
         </div>
 
+        <div class="settings-results">
+          <div v-if="chatResult" class="result-block">
+            <div class="result-tag">智能体回复</div>
+            <div class="result-body">{{ chatResult.answer }}</div>
+            <ul v-if="chatResult.traces?.length" class="trace-list">
+              <li v-for="trace in chatResult.traces" :key="trace">{{ trace }}</li>
+            </ul>
+          </div>
+          <div v-else class="empty-state">智能体回复会显示在这里</div>
+
+          <div v-if="scheduleResult" class="result-block">
+            <div class="result-tag">调度决策</div>
+            <div class="result-title">{{ scheduleResult.target }} / {{ scheduleResult.complexity }}</div>
+            <div class="result-body">{{ scheduleResult.reason }}</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Logs -->
+    <main v-else class="main main-logs">
+      <div class="logs-page">
+        <div class="logs-header">
+          <h2 class="logs-title">任务日志</h2>
+          <span class="logs-count">{{ taskLogs.length }} records</span>
+        </div>
         <div v-if="taskLogs.length" class="log-list">
-          <article v-for="log in taskLogs" :key="log.task_id" class="log-card">
-            <div class="timeline-top">
-              <strong>{{ log.task }}</strong>
-              <span>{{ log.target }}</span>
+          <div v-for="log in taskLogs" :key="log.task_id" class="log-item">
+            <div>
+              <div class="log-task">{{ log.task }}</div>
+              <div class="log-summary">{{ log.result_summary }}</div>
+              <div class="device-meta" style="margin-top:6px">{{ log.device_id }} · {{ formatTime(log.created_at) }}</div>
             </div>
-            <p>{{ log.result_summary }}</p>
-            <small>{{ log.device_id }} · {{ formatTime(log.created_at) }}</small>
-          </article>
+            <span class="log-target">{{ log.target }}</span>
+          </div>
         </div>
-        <div v-else class="empty-inline">暂无任务日志。</div>
-      </section>
+        <div v-else class="empty-state">暂无任务日志</div>
+      </div>
     </main>
   </div>
 </template>

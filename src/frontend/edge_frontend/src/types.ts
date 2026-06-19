@@ -20,7 +20,17 @@ export interface Detection {
 }
 
 export interface PoseAnalysis {
-  action: 'standing' | 'sitting' | 'raising_hand' | 'crouching' | 'unknown'
+  action:
+    | 'standing'
+    | 'sitting'
+    | 'raising_hand'
+    | 'crouching'
+    | 'head_left'
+    | 'head_right'
+    | 'head_down'
+    | 'upper_body_left'
+    | 'upper_body_right'
+    | 'unknown'
   confidence: number
   needs_cloud: boolean
   matched_rule: string

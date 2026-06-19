@@ -202,7 +202,16 @@ function boxStyle(item: Detection, current: DetectionResult | null): Record<stri
 
 function actionLabel(value: string): string {
   const map: Record<string, string> = {
-    standing: '站立', sitting: '坐下', raising_hand: '举手', crouching: '蹲下', unknown: '待复核',
+    standing: '上身直立',
+    sitting: '坐下',
+    raising_hand: '举手',
+    crouching: '蹲下',
+    head_left: '头部左偏',
+    head_right: '头部右偏',
+    head_down: '低头',
+    upper_body_left: '上身左倾',
+    upper_body_right: '上身右倾',
+    unknown: '待复核',
   }
   return map[value] ?? value
 }
@@ -241,53 +250,32 @@ function keypointTitle(p: NormalizedKeypoint): string {
 
 <template>
   <div class="shell">
-    <div class="mesh mesh-a"></div>
-    <div class="mesh mesh-b"></div>
-    <div class="mesh mesh-c"></div>
+    <div v-if="error" class="error-bar">{{ error }}</div>
 
-    <header class="masthead">
-      <div class="masthead-copy">
-        <p class="eyebrow">Edge Station</p>
-        <h1>边端姿态工作台</h1>
-        <p class="lede">
-          边端优先完成摄像头采集、YOLO 检测和姿态动作规则判断，无法稳定匹配时自动进入云端复核路径。
-        </p>
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="logo">
+          <span class="logo-dot"></span>
+          <span>Edge Station</span>
+        </div>
+        <nav class="tab-group">
+          <button class="tab-btn active" type="button">监控</button>
+          <button class="tab-btn" type="button">姿态</button>
+          <button class="tab-btn" type="button">日志</button>
+        </nav>
       </div>
-
-      <div class="top-strip">
-        <article class="strip-card">
-          <span>Device</span>
-          <strong>{{ edgeStatus?.device_id ?? deviceId }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Status</span>
-          <strong :class="edgeStatus?.online ? 'ok' : 'warn'">{{ edgeStatus?.online ? 'ONLINE' : 'OFFLINE' }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Pose</span>
-          <strong>{{ actionLabel(activeAction) }}</strong>
-        </article>
-        <article class="strip-card">
-          <span>Stream</span>
-          <strong :class="rtcConnected ? 'ok' : 'warn'">{{ rtcConnected ? 'WebRTC' : (connected ? 'WS' : '--') }}</strong>
-        </article>
+      <div class="topbar-right">
+        <div class="status-pill" :class="{ offline: !rtcConnected }">
+          <span class="pulse"></span>
+          {{ rtcConnected ? 'WEBRTC' : (connected ? 'WS' : 'OFFLINE') }}
+        </div>
+        <span class="server-time">{{ formatTime(state?.server_time) }}</span>
       </div>
     </header>
 
-    <main class="layout">
-      <section class="panel viewport">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Live Frame</p>
-            <h2>实时画面与姿态框</h2>
-          </div>
-          <div class="panel-meta">
-            <span v-if="rtcConnected" class="live-dot"></span>
-            {{ rtcConnected ? 'WebRTC 实时视频' : '等待连接...' }}
-          </div>
-        </div>
-
-        <div ref="frameRef" class="frame">
+    <main class="main main-home">
+      <section class="viewport">
+        <div ref="frameRef" class="frame-wrap">
           <video
             ref="videoRef"
             class="frame-video"
@@ -296,27 +284,30 @@ function keypointTitle(p: NormalizedKeypoint): string {
             muted
           ></video>
           <div v-if="!rtcConnected" class="frame-placeholder">
-            <div>
-              <p>等待边端摄像头画面</p>
-              <span>正在建立 WebRTC 视频连接；检测数据与视频使用不同通道</span>
-            </div>
-          </div>
-          <div class="frame-grid"></div>
-
-          <div v-if="showVideoAnnotations && latestDetection" class="frame-chips">
-            <span>Frame {{ latestDetection.frame_id }}</span>
-            <span>FPS {{ formatNumber(latestDetection.fps) }}</span>
-            <span>{{ latestDetection.inference_ms }} ms</span>
-            <span>{{ latestDetection.backend }}</span>
-            <span>{{ latestDetection.model_task }}</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <strong>等待边端摄像头画面</strong>
+            <span>正在建立 WebRTC 视频连接；检测数据与视频使用不同通道。</span>
           </div>
 
-          <div class="pose-badge" :class="{ alert: pose?.needs_cloud }">
-            <strong>{{ actionLabel(activeAction) }}</strong>
-            <span>{{ pose?.confidence ? `置信度 ${formatNumber(pose.confidence, 2)}` : '等待有效姿态' }}</span>
+          <div v-if="showVideoAnnotations && latestDetection" class="frame-hud">
+            <span class="hud-tag">#{{ latestDetection.frame_id }}</span>
+            <span class="hud-tag">{{ formatNumber(latestDetection.fps) }} FPS</span>
+            <span class="hud-tag">{{ formatNumber(latestDetection.inference_ms, 1) }}ms</span>
+            <span class="hud-tag">{{ latestDetection.backend || '--' }}</span>
+            <span class="hud-tag">{{ latestDetection.model_task || '--' }}</span>
           </div>
 
-          <div v-if="showVideoAnnotations && latestDetection" class="cloud-badge">
+          <div class="pose-alert" :class="pose?.needs_cloud ? 'candidate' : 'stable'">
+            <span>{{ actionLabel(activeAction) }}</span>
+            <span style="opacity:0.62;font-weight:400">
+              {{ pose?.confidence ? `置信度 ${formatNumber(pose.confidence, 2)}` : '等待有效姿态' }}
+            </span>
+          </div>
+
+          <div v-if="showVideoAnnotations && latestDetection" class="cloud-hint">
             <span>{{ cloudHint }}</span>
           </div>
 
@@ -351,54 +342,93 @@ function keypointTitle(p: NormalizedKeypoint): string {
           </div>
         </div>
 
-        <div class="metrics">
-          <article class="metric">
-            <span>检测目标</span>
-            <strong>{{ detections.length }}</strong>
-          </article>
-          <article class="metric">
-            <span>推理耗时</span>
-            <strong>{{ latestDetection ? `${formatNumber(latestDetection.inference_ms, 1)} ms` : '--' }}</strong>
-          </article>
-          <article class="metric">
-            <span>云端候选</span>
-            <strong>{{ pose?.needs_cloud ? 'YES' : 'NO' }}</strong>
-          </article>
-          <article class="metric">
-            <span>最后更新</span>
-            <strong>{{ latestDetection ? formatTime(latestDetection.created_at) : '--' }}</strong>
-          </article>
+        <div class="bottom-bar">
+          <div class="det-table-wrap">
+            <div class="det-table-title">最近检测结果</div>
+            <table v-if="detections.length" class="det-table">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>Conf</th>
+                  <th>Box</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in detections" :key="`${item.label}-${item.confidence}`">
+                  <td class="label-cell">{{ item.label }}</td>
+                  <td>{{ formatNumber(item.confidence, 2) }}</td>
+                  <td>
+                    {{ item.box.x1.toFixed(0) }}, {{ item.box.y1.toFixed(0) }},
+                    {{ item.box.x2.toFixed(0) }}, {{ item.box.y2.toFixed(0) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="latestDetection?.model_path" class="model-path">{{ latestDetection.model_path }}</div>
+            <div v-if="!detections.length" class="no-data">暂无检测结果</div>
+          </div>
         </div>
       </section>
 
-      <aside class="panel rail">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Edge Logs</p>
-            <h2>日志卡片列表</h2>
-          </div>
-          <div class="panel-meta">
-            <span v-if="connected" class="live-dot"></span>
-            {{ formatTime(state?.server_time) }}
-          </div>
-        </div>
-
-        <div v-if="error" class="notice error">{{ error }}</div>
-        <div v-else-if="loading" class="notice">正在拉取边端状态...</div>
-
-        <div class="log-stack log-scroll">
-          <article v-for="log in taskLogs.slice(0, 12)" :key="log.task_id" class="log-card">
-            <div class="timeline-top">
-              <strong>{{ log.task }}</strong>
-              <span>{{ log.target }}</span>
+      <aside class="sidebar">
+        <section class="sidebar-section">
+          <div class="sidebar-section-title">实时指标</div>
+          <div class="metric-grid">
+            <div class="metric-card">
+              <div class="metric-label">检测目标</div>
+              <div class="metric-value">{{ detections.length }}</div>
             </div>
-            <p>{{ log.result_summary }}</p>
-            <small>{{ log.device_id }} · {{ formatTime(log.created_at) }}</small>
-          </article>
-          <div v-if="!taskLogs.length" class="empty-inline">
-            边端日志会在这里实时汇总。
+            <div class="metric-card">
+              <div class="metric-label">推理耗时</div>
+              <div class="metric-value small">{{ latestDetection ? `${formatNumber(latestDetection.inference_ms, 1)}ms` : '--' }}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">姿态</div>
+              <div class="metric-value small">{{ actionLabel(activeAction) }}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">云端候选</div>
+              <div class="metric-value small">{{ pose?.needs_cloud ? 'YES' : 'NO' }}</div>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section class="sidebar-section">
+          <div class="sidebar-section-title">边端设备</div>
+          <div class="device-list">
+            <div class="device-item">
+              <span class="device-name">{{ edgeStatus?.device_id ?? deviceId }}</span>
+              <span class="device-status" :class="edgeStatus?.online ? 'on' : 'off'">
+                {{ edgeStatus?.online ? 'ON' : 'OFF' }}
+              </span>
+              <div class="device-stats">
+                <span>FPS {{ formatNumber(edgeStatus?.fps ?? 0) }}</span>
+                <span>CPU {{ formatNumber(edgeStatus?.cpu_percent ?? 0) }}%</span>
+                <span>MEM {{ formatNumber(edgeStatus?.memory_percent ?? 0) }}%</span>
+              </div>
+              <div class="device-meta">
+                {{ edgeStatus?.network ?? 'unknown' }} · {{ edgeStatus ? formatTime(edgeStatus.last_seen) : '--' }}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-section logs-section">
+          <div class="sidebar-section-title">边端日志</div>
+          <div v-if="error" class="notice error">{{ error }}</div>
+          <div v-else-if="loading" class="notice">正在拉取边端状态...</div>
+          <div v-if="taskLogs.length" class="log-list">
+            <div v-for="log in taskLogs.slice(0, 12)" :key="log.task_id" class="log-item">
+              <div>
+                <div class="log-task">{{ log.task }}</div>
+                <div class="log-summary">{{ log.result_summary }}</div>
+                <div class="device-meta" style="margin-top:6px">{{ log.device_id }} · {{ formatTime(log.created_at) }}</div>
+              </div>
+              <span class="log-target">{{ log.target }}</span>
+            </div>
+          </div>
+          <div v-else class="no-data">边端日志会在这里实时汇总</div>
+        </section>
       </aside>
     </main>
   </div>

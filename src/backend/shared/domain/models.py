@@ -20,6 +20,11 @@ class PoseAction(str, Enum):
     SITTING = "sitting"
     RAISING_HAND = "raising_hand"
     CROUCHING = "crouching"
+    HEAD_LEFT = "head_left"
+    HEAD_RIGHT = "head_right"
+    HEAD_DOWN = "head_down"
+    UPPER_BODY_LEFT = "upper_body_left"
+    UPPER_BODY_RIGHT = "upper_body_right"
     UNKNOWN = "unknown"
 
 

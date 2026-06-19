@@ -45,3 +45,46 @@ def test_pose_analyzer_marks_cloud_when_keypoints_are_sparse() -> None:
 
     assert decision.analysis.action == PoseAction.UNKNOWN
     assert decision.analysis.needs_cloud is True
+
+
+def test_pose_analyzer_recognizes_upper_body_with_face_and_shoulders() -> None:
+    keypoints = _make_keypoints()
+    keypoints[0] = Keypoint(x=125.0, y=130.0, confidence=0.86)
+    keypoints[1] = Keypoint(x=112.0, y=122.0, confidence=0.82)
+    keypoints[2] = Keypoint(x=138.0, y=122.0, confidence=0.82)
+    keypoints[5] = Keypoint(x=90.0, y=210.0, confidence=0.9)
+    keypoints[6] = Keypoint(x=160.0, y=210.0, confidence=0.9)
+
+    detection = Detection(
+        label="person",
+        confidence=0.96,
+        box=BoundingBox(x1=60.0, y1=80.0, x2=220.0, y2=300.0),
+        keypoints=keypoints,
+    )
+
+    decision = PoseAnalyzer().analyze([detection], (640, 360))
+
+    assert decision.analysis.action == PoseAction.STANDING
+    assert decision.analysis.needs_cloud is False
+    assert decision.analysis.matched_rule == "upper_body_upright_rule"
+
+
+def test_pose_analyzer_reports_head_direction_from_subject_perspective() -> None:
+    keypoints = _make_keypoints()
+    keypoints[0] = Keypoint(x=150.0, y=130.0, confidence=0.9)
+    keypoints[1] = Keypoint(x=138.0, y=122.0, confidence=0.82)
+    keypoints[2] = Keypoint(x=162.0, y=122.0, confidence=0.82)
+    keypoints[5] = Keypoint(x=80.0, y=210.0, confidence=0.9)
+    keypoints[6] = Keypoint(x=160.0, y=210.0, confidence=0.9)
+
+    detection = Detection(
+        label="person",
+        confidence=0.96,
+        box=BoundingBox(x1=60.0, y1=80.0, x2=220.0, y2=300.0),
+        keypoints=keypoints,
+    )
+
+    decision = PoseAnalyzer().analyze([detection], (640, 360))
+
+    assert decision.analysis.action == PoseAction.HEAD_LEFT
+    assert decision.analysis.needs_cloud is False
