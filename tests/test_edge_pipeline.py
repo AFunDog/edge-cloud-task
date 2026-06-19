@@ -3,6 +3,7 @@ from backend.shared.domain.models import (
     BoundingBox,
     Detection,
     DetectionResult,
+    EventStatus,
     ExecutionTarget,
     Keypoint,
 )
@@ -67,6 +68,7 @@ def test_pipeline_keeps_stable_pose_on_edge_and_syncs_cloud() -> None:
     pipeline.sync_cloud(cycle)
 
     assert cycle.decision.target == ExecutionTarget.EDGE
+    assert any(event.event_type == "pose_raising_hand" for event in cycle.events)
     assert cycle.cloud_synced is True
     assert len(cloud.detections) == 1
     assert len(cloud.logs) == 1
@@ -82,8 +84,9 @@ def test_pipeline_sends_uncertain_pose_to_cloud_agent() -> None:
     pipeline.sync_cloud(cycle)
 
     assert cycle.decision.target == ExecutionTarget.CLOUD
+    assert any(event.status is EventStatus.CLOUD_PENDING for event in cycle.events)
     assert cycle.agent_called is True
-    assert cycle.task_log.result_summary.startswith("边端姿态识别")
+    assert cycle.task_log.result_summary.startswith("边端事件")
     assert len(cloud.agent_requests) == 1
     assert not cloud.logs
 

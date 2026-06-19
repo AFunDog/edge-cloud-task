@@ -1,6 +1,7 @@
 import type {
   DetectionResult,
   EdgeStatus,
+  SafetyEvent,
   ScheduleDecision,
   SystemState,
   TaskLog,
@@ -46,6 +47,7 @@ export type StreamMessage =
   | { type: 'detection'; data: DetectionResult }
   | { type: 'status'; data: EdgeStatus }
   | { type: 'task_log'; data: TaskLog }
+  | { type: 'event'; data: SafetyEvent }
   | { type: 'error'; message: string }
 
 export interface StreamCallbacks {
@@ -53,6 +55,7 @@ export interface StreamCallbacks {
   onStatus?: (data: EdgeStatus) => void
   onSnapshot?: (data: SystemState) => void
   onTaskLog?: (data: TaskLog) => void
+  onEvent?: (data: SafetyEvent) => void
   onError?: (message: string) => void
   onClose?: () => void
   onOpen?: () => void
@@ -108,6 +111,9 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
             break
           case 'task_log':
             callbacks.onTaskLog?.(msg.data)
+            break
+          case 'event':
+            callbacks.onEvent?.(msg.data)
             break
           case 'error':
             callbacks.onError?.(msg.message)

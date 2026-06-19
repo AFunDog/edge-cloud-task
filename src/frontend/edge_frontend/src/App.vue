@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { connectStream, connectWebRTC, fetchState } from './api'
-import type { Detection, DetectionResult, EdgeStatus, SystemState, TaskLog } from './types'
+import type { Detection, DetectionResult, EdgeStatus, SafetyEvent, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 import {
   COCO_SKELETON,
@@ -69,6 +69,11 @@ function applyTaskLog(log: TaskLog): void {
   state.value = { ...state.value, task_logs: [log, ...state.value.task_logs.slice(0, 199)] }
 }
 
+function applyEvent(event: SafetyEvent): void {
+  if (!state.value) return
+  state.value = { ...state.value, events: [event, ...state.value.events.slice(0, 199)] }
+}
+
 function updateFrameSize(): void {
   if (!frameRef.value) return
   const rect = frameRef.value.getBoundingClientRect()
@@ -101,6 +106,7 @@ function openStream(): void {
     onDetection: applyDetection,
     onStatus: applyEdgeStatus,
     onTaskLog: applyTaskLog,
+    onEvent: applyEvent,
     onError: (msg) => { error.value = msg },
     onOpen: () => { connected.value = true; loading.value = false },
     onClose: () => { connected.value = false },

@@ -173,6 +173,8 @@ class EdgeCollector:
         self.last_cycle = cycle
         runtime_state.add_detection(result)
         runtime_state.add_task_log(cycle.task_log)
+        for event in cycle.events:
+            runtime_state.add_event(event)
         self._broadcast({
             "type": "detection",
             "data": result.model_dump(mode="json", exclude={"image_jpeg_base64"}),
@@ -181,6 +183,11 @@ class EdgeCollector:
             "type": "task_log",
             "data": cycle.task_log.model_dump(mode="json"),
         })
+        for event in cycle.events:
+            self._broadcast({
+                "type": "event",
+                "data": event.model_dump(mode="json"),
+            })
         self._submit_cloud_sync(cycle)
 
     def _submit_cloud_sync(self, cycle: EdgeCycle) -> None:

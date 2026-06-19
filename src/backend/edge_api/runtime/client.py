@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import httpx
 
-from backend.shared.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, TaskLog
+from backend.shared.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, SafetyEvent, TaskLog
 
 
 class EdgeClient:
@@ -76,6 +76,9 @@ class EdgeClient:
 
     def publish_task_log(self, log: TaskLog) -> bool:
         return self._post_json("/api/tasks/logs", log.model_dump(mode="json"), timeout=5)
+
+    def publish_event(self, event: SafetyEvent) -> bool:
+        return self._post_json("/api/edge/events", event.model_dump(mode="json"), timeout=5)
 
     def _post_json(self, path: str, payload: dict, *, timeout: float) -> bool:
         try:
@@ -203,6 +206,9 @@ class CloudClient:
 
     def publish_task_log(self, log: TaskLog) -> bool:
         return self._post_json("/api/tasks/logs", log.model_dump(mode="json"), timeout=5)
+
+    def publish_event(self, event: SafetyEvent) -> bool:
+        return self._post_json("/api/edge/events", event.model_dump(mode="json"), timeout=5)
 
     def ask_agent(self, request: AgentRequest) -> AgentResponse:
         with httpx.Client(timeout=30) as client:

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from backend.edge_api.routes.webrtc import push_video_frame, push_video_ndarray
 from backend.edge_api.runtime.stream import stream_manager
 from backend.shared.core.state import runtime_state
-from backend.shared.domain.models import DetectionResult, EdgeStatus
+from backend.shared.domain.models import DetectionResult, EdgeStatus, SafetyEvent
 
 router = APIRouter(prefix="/api/edge", tags=["edge-ingest"])
 
@@ -60,3 +60,13 @@ async def create_detection(result: DetectionResult) -> dict:
         "data": result.model_dump(mode="json", exclude={"image_jpeg_base64"}),
     })
     return {"ok": True, "frame_id": result.frame_id}
+
+
+@router.post("/events")
+async def create_event(event: SafetyEvent) -> dict:
+    runtime_state.add_event(event)
+    await stream_manager.broadcast({
+        "type": "event",
+        "data": event.model_dump(mode="json"),
+    })
+    return {"ok": True, "event_id": event.event_id}

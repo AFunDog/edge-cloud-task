@@ -207,6 +207,17 @@ src/backend/edge_api/runtime/events.py
 - `crowding`：人数超过阈值并持续。
 - `pose_uncertain`：关键点不足或姿态为 unknown。
 
+阶段 2 已实现 `EdgeEventAnalyzer` 和 `EdgeEventAnalyzerConfig`：
+
+- `person_count`：人数发生变化时生成本地事件，状态为 `edge_resolved`。
+- `pose_raising_hand`、`pose_head_down`、`pose_head_left`、`pose_head_right`、`pose_upper_body_left`、`pose_upper_body_right`：由边端姿态规则稳定命中时生成本地事件。
+- `long_head_down`：连续低头超过阈值，生成 `warning / cloud_pending` 事件。
+- `fall_suspected`：人体框横向比例异常且姿态置信度偏低，生成 `critical / cloud_pending` 事件。
+- `crowding`：人数超过阈值并持续，生成 `warning / cloud_pending` 事件。
+- `pose_uncertain`：关键点不足、姿态为 unknown 或规则置信度过低，生成 `warning / cloud_pending` 事件。
+
+分析器内部带短期状态和冷却时间，避免同一事件每帧重复刷屏。阶段 2 只负责把复杂事件标记成云端候选；真正上传云端并调用 Agent 的事件分析接口留给阶段 3。
+
 ### 6.2 接入 Pipeline
 
 修改：
@@ -233,6 +244,16 @@ DetectionResult -> PoseAnalyzer -> EdgeEventAnalyzer -> TaskScheduler -> EdgeCyc
 - `cloud_analysis: CloudAnalysisResponse | None`
 - `cloud_analysis_requested: bool`
 
+阶段 2 已接入：
+
+- `EdgePipeline.process()` 在姿态分析之后调用 `EdgeEventAnalyzer.analyze()`。
+- `EdgeCycle` 已增加 `events: list[SafetyEvent]`。
+- 如果存在 `cloud_pending` 事件，调度决策会切到 `cloud / complex`，并在任务日志中说明边端生成了复杂安全事件。
+- `EdgeCollector` 会把事件写入 `RuntimeState`，并通过 WebSocket 广播 `event` 消息。
+- 本地边端接口新增 `POST /api/edge/events`，独立 runner 模式也能把事件写入边端 API 状态层。
+
+`cloud_analysis` 和 `cloud_analysis_requested` 暂未加入 `EdgeCycle`，原因是阶段 3 还需要先落云端事件接收与 Agent 分析接口；避免在阶段 2 放置空字段造成语义漂移。
+
 ### 6.3 边端上报
 
 扩展 `CloudClient`：
@@ -252,6 +273,12 @@ src/backend/edge_api/runtime/client.py
 - `publish_status`
 - `publish_task_log`
 - `ask_agent`
+
+阶段 2 已补充本地边端上报能力：
+
+- `EdgeClient.publish_event(event)` -> `POST /api/edge/events`
+
+云端事件上报会在阶段 3 随 `cloud_api/routes/events.py` 一起完成。
 
 ## 7. 云端实现方案
 
@@ -421,6 +448,28 @@ python -m compileall src/backend/shared src/backend/edge_api/routes/stream.py
 
 - 边端能在不依赖云端的情况下生成本地事件。
 - 复杂事件能标记为云端候选。
+
+实现状态：已完成。
+
+落地文件：
+
+- `src/backend/edge_api/runtime/events.py`
+- `src/backend/edge_api/runtime/pipeline.py`
+- `src/backend/edge_api/runtime/collector.py`
+- `src/backend/edge_api/runtime/client.py`
+- `src/backend/edge_api/runtime/runner.py`
+- `src/backend/edge_api/routes/edge.py`
+- `src/frontend/edge_frontend/src/api.ts`
+- `src/frontend/edge_frontend/src/App.vue`
+- `tests/test_edge_events.py`
+- `tests/test_edge_pipeline.py`
+
+验证命令：
+
+```powershell
+python -m pytest tests/test_edge_events.py tests/test_edge_pipeline.py tests/test_events_state.py
+python -m compileall src/backend/edge_api/runtime/events.py src/backend/edge_api/runtime/pipeline.py src/backend/edge_api/runtime/collector.py src/backend/edge_api/runtime/client.py src/backend/edge_api/routes/edge.py
+```
 
 ### 阶段 3：云端事件接收与 Agent 分析
 

@@ -4,11 +4,14 @@ import time
 from dataclasses import dataclass
 
 from backend.edge_api.runtime.client import CloudClient
+from backend.edge_api.runtime.events import EdgeEventAnalyzer
 from backend.edge_api.runtime.pose import PoseAnalyzer
 from backend.shared.domain.models import (
     AgentRequest,
     DetectionResult,
+    EventStatus,
     ExecutionTarget,
+    SafetyEvent,
     ScheduleDecision,
     TaskComplexity,
     TaskLog,
@@ -22,6 +25,7 @@ class EdgeCycle:
     detection: DetectionResult
     decision: ScheduleDecision
     task_log: TaskLog
+    events: list[SafetyEvent]
     cloud_available: bool = False
     cloud_synced: bool = False
     agent_called: bool = False
@@ -41,6 +45,7 @@ class EdgePipeline:
         cloud_agent_cooldown_seconds: float = 10.0,
         scheduler: TaskScheduler | None = None,
         pose_analyzer: PoseAnalyzer | None = None,
+        event_analyzer: EdgeEventAnalyzer | None = None,
     ) -> None:
         self.task = task
         self.cloud_client = cloud_client
@@ -49,12 +54,14 @@ class EdgePipeline:
         self.cloud_agent_cooldown_seconds = max(0.0, cloud_agent_cooldown_seconds)
         self.scheduler = scheduler or TaskScheduler()
         self.pose_analyzer = pose_analyzer or PoseAnalyzer()
+        self.event_analyzer = event_analyzer or EdgeEventAnalyzer()
         self._cloud_available = False
         self._cloud_checked_at = float("-inf")
         self._last_agent_call_at = float("-inf")
 
     def process(self, detection: DetectionResult) -> EdgeCycle:
         self._analyze_pose(detection)
+        events = self.event_analyzer.analyze(detection)
         request = TaskRequest(task=self.task, device_id=detection.device_id, frame_id=detection.frame_id)
         decision = self.scheduler.decide(request)
         if detection.pose is not None and detection.pose.needs_cloud:
@@ -63,8 +70,16 @@ class EdgePipeline:
                 complexity=TaskComplexity.COMPLEX,
                 reason="边端姿态规则未能稳定匹配结果，转发云端智能体复核。",
             )
+        pending_events = [event for event in events if event.status == EventStatus.CLOUD_PENDING]
+        if pending_events:
+            event_names = "、".join(event.event_type for event in pending_events[:3])
+            decision = ScheduleDecision(
+                target=ExecutionTarget.CLOUD,
+                complexity=TaskComplexity.COMPLEX,
+                reason=f"边端生成复杂安全事件（{event_names}），标记为云端复核候选。",
+            )
 
-        summary = self._local_summary(detection, decision)
+        summary = self._local_summary(detection, decision, events)
         cycle = EdgeCycle(
             detection=detection,
             decision=decision,
@@ -74,6 +89,7 @@ class EdgePipeline:
                 target=decision.target,
                 result_summary=summary,
             ),
+            events=events,
         )
         return cycle
 
@@ -141,7 +157,20 @@ class EdgePipeline:
     def _agent_call_due(self) -> bool:
         return time.monotonic() - self._last_agent_call_at >= self.cloud_agent_cooldown_seconds
 
-    def _local_summary(self, detection: DetectionResult, decision: ScheduleDecision) -> str:
+    def _local_summary(
+        self,
+        detection: DetectionResult,
+        decision: ScheduleDecision,
+        events: list[SafetyEvent],
+    ) -> str:
+        if events:
+            cloud_events = [event.event_type for event in events if event.status == EventStatus.CLOUD_PENDING]
+            edge_events = [event.event_type for event in events if event.status == EventStatus.EDGE_RESOLVED]
+            return (
+                f"边端事件 {len(events)} 条"
+                f"（本地 {len(edge_events)}，云端候选 {len(cloud_events)}），"
+                f"调度至 {decision.target.value}。"
+            )
         if detection.pose is not None:
             return (
                 f"边端姿态识别：{detection.pose.action.value}，"

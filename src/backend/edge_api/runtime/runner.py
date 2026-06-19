@@ -86,6 +86,8 @@ def main() -> None:
             if publish:
                 edge_client.publish_detection(cycle.detection)
                 edge_client.publish_task_log(cycle.task_log)
+                for event in cycle.events:
+                    edge_client.publish_event(event)
             if sync_cloud_inline:
                 _run_cloud_sync(cycle)
             else:
