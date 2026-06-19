@@ -37,7 +37,7 @@ class RuntimeState:
         with self._lock:
             for index, existing in enumerate(self._events):
                 if existing.event_id == event.event_id:
-                    self._events[index] = event
+                    self._events[index] = self._merge_event(existing, event)
                     return
             self._events.appendleft(event)
 
@@ -70,6 +70,19 @@ class RuntimeState:
             for index, event in enumerate(self._events):
                 if event.event_id in analyzed_event_ids:
                     self._events[index] = event.model_copy(update={"status": EventStatus.CLOUD_ANALYZED})
+
+    def _merge_event(self, existing: SafetyEvent, incoming: SafetyEvent) -> SafetyEvent:
+        if self._status_rank(existing.status) > self._status_rank(incoming.status):
+            return incoming.model_copy(update={"status": existing.status})
+        return incoming
+
+    @staticmethod
+    def _status_rank(status: EventStatus) -> int:
+        return {
+            EventStatus.EDGE_RESOLVED: 0,
+            EventStatus.CLOUD_PENDING: 1,
+            EventStatus.CLOUD_ANALYZED: 2,
+        }[status]
 
     def latest_detection(self, device_id: str | None = None) -> DetectionResult | None:
         with self._lock:

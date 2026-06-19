@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, HTTPException, Query
 
+from backend.cloud_api.cloud.event_repository import CloudEventRepository
 from backend.cloud_api.dependencies import get_agent, get_event_repository
 from backend.shared.core.state import runtime_state
 from backend.shared.domain.models import (
@@ -12,12 +14,13 @@ from backend.shared.domain.models import (
 )
 
 router = APIRouter(prefix="/api/events", tags=["cloud-events"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=SafetyEvent)
 def create_event(event: SafetyEvent) -> SafetyEvent:
     runtime_state.add_event(event)
-    get_event_repository().save_event(event)
+    _safe_save_event(get_event_repository(), event)
     return event
 
 
@@ -33,7 +36,10 @@ def search_events(
 ) -> list[SafetyEvent]:
     repository = get_event_repository()
     if repository.enabled:
-        return repository.search_events(q, limit)
+        try:
+            return repository.search_events(q, limit)
+        except Exception:
+            logger.exception("Failed to search persisted events; falling back to runtime state.")
     events = runtime_state.snapshot()["events"]
     if not q.strip():
         return events[:limit]
@@ -45,13 +51,13 @@ def search_events(
 def analyze_event(request: CloudAnalysisRequest) -> CloudAnalysisResponse:
     runtime_state.add_event(request.event)
     repository = get_event_repository()
-    repository.save_event(request.event)
+    _safe_save_event(repository, request.event)
     response = get_agent().analyze_event(request)
     runtime_state.add_analysis_result(response)
-    repository.save_analysis_result(response)
+    _safe_save_analysis_result(repository, response)
     analyzed_event = _find_event(response.event_id)
     if analyzed_event is not None:
-        repository.save_event(analyzed_event)
+        _safe_save_event(repository, analyzed_event)
     return response
 
 
@@ -66,9 +72,9 @@ def get_event_report(event_id: str) -> EventReport:
     analysis = _find_analysis(event_id)
     repository = get_event_repository()
     if event is None:
-        event = repository.get_event(event_id)
+        event = _safe_get_event(repository, event_id)
     if analysis is None:
-        analysis = repository.get_analysis_result(event_id)
+        analysis = _safe_get_analysis_result(repository, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
     return EventReport(
@@ -108,6 +114,39 @@ def _event_matches(event: SafetyEvent, keyword: str) -> bool:
         ]
     ).lower()
     return keyword in haystack
+
+
+def _safe_save_event(repository: CloudEventRepository, event: SafetyEvent) -> None:
+    try:
+        repository.save_event(event)
+    except Exception:
+        logger.exception("Failed to persist event %s; runtime state will continue.", event.event_id)
+
+
+def _safe_save_analysis_result(repository: CloudEventRepository, result: CloudAnalysisResponse) -> None:
+    try:
+        repository.save_analysis_result(result)
+    except Exception:
+        logger.exception("Failed to persist analysis result %s; runtime state will continue.", result.event_id)
+
+
+def _safe_get_event(repository: CloudEventRepository, event_id: str) -> SafetyEvent | None:
+    try:
+        return repository.get_event(event_id)
+    except Exception:
+        logger.exception("Failed to load persisted event %s.", event_id)
+        return None
+
+
+def _safe_get_analysis_result(
+    repository: CloudEventRepository,
+    event_id: str,
+) -> CloudAnalysisResponse | None:
+    try:
+        return repository.get_analysis_result(event_id)
+    except Exception:
+        logger.exception("Failed to load persisted analysis result %s.", event_id)
+        return None
 
 
 def _compose_report_markdown(

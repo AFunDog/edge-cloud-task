@@ -28,6 +28,16 @@ class FakeEventRepository:
         return self.events[:limit]
 
 
+class FailingEventRepository(FakeEventRepository):
+    enabled = True
+
+    def save_event(self, event: SafetyEvent) -> None:
+        raise RuntimeError("database unavailable")
+
+    def save_analysis_result(self, result: CloudAnalysisResponse) -> None:
+        raise RuntimeError("database unavailable")
+
+
 def test_cloud_events_route_accepts_and_analyzes_event() -> None:
     client = TestClient(app)
     event = SafetyEvent(
@@ -82,6 +92,25 @@ def test_cloud_events_route_persists_event_and_analysis(monkeypatch) -> None:
     assert any(item.event_id == event.event_id for item in repository.events)
     assert repository.analysis_results[0].event_id == event.event_id
     assert any(item.status is EventStatus.CLOUD_ANALYZED for item in repository.events)
+
+
+def test_cloud_events_route_continues_when_persistence_fails(monkeypatch) -> None:
+    monkeypatch.setattr(event_routes, "get_event_repository", lambda: FailingEventRepository())
+    client = TestClient(app)
+    event = SafetyEvent(
+        event_type="long_head_down",
+        device_id="edge-camera-01",
+        severity=EventSeverity.WARNING,
+        status=EventStatus.CLOUD_PENDING,
+        summary="连续低头超过阈值。",
+    )
+
+    create_response = client.post("/api/events", json=event.model_dump(mode="json"))
+    analyze_response = client.post("/api/events/analyze", json={"event": event.model_dump(mode="json")})
+
+    assert create_response.status_code == 200
+    assert analyze_response.status_code == 200
+    assert analyze_response.json()["event_id"] == event.event_id
 
 
 def test_event_report_route_returns_markdown() -> None:

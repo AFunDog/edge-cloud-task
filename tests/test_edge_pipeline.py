@@ -112,7 +112,8 @@ def test_pipeline_sends_uncertain_pose_to_cloud_agent() -> None:
     assert cycle.task_log.result_summary.startswith("边端事件")
     assert len(cloud.analysis_requests) == 1
     assert not cloud.agent_requests
-    assert not cloud.logs
+    assert len(cloud.logs) == 1
+    assert cloud.logs[0].result_summary == "云端事件分析完成"
 
 
 def test_pipeline_continues_locally_when_cloud_is_offline() -> None:

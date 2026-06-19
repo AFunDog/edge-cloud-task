@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from backend.cloud_api.cloud.agent import CloudAgent
-from backend.cloud_api.cloud.database import CloudEventRepository
+from backend.cloud_api.cloud.event_repository import CloudEventRepository
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.search import SearchTool

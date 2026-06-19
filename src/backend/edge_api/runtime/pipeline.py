@@ -181,7 +181,7 @@ class EdgePipeline:
             except Exception as exc:
                 cycle.cloud_error = f"云端智能体调用失败：{exc}"
 
-        log_ok = True if cycle.agent_called else self.cloud_client.publish_task_log(cloud_log)
+        log_ok = self.cloud_client.publish_task_log(cloud_log)
         cycle.cloud_synced = detection_ok and event_ok and analysis_ok and log_ok
 
     def _is_cloud_available(self) -> bool:

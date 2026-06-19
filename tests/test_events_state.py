@@ -115,3 +115,27 @@ def test_runtime_state_can_replace_persisted_history() -> None:
     assert [event.event_id for event in snapshot["events"]] == [restored_event.event_id]
     assert snapshot["events"][0].status is EventStatus.CLOUD_ANALYZED
     assert snapshot["analysis_results"][0].event_id == restored_event.event_id
+
+
+def test_add_event_does_not_downgrade_cloud_analyzed_status() -> None:
+    state = RuntimeState()
+    event = SafetyEvent(
+        event_type="long_head_down",
+        device_id="edge-a",
+        status=EventStatus.CLOUD_PENDING,
+        summary="需要云端复核",
+    )
+    state.add_event(event)
+    state.add_analysis_result(
+        CloudAnalysisResponse(
+            event_id=event.event_id,
+            risk_level=EventSeverity.WARNING,
+            conclusion="已经分析",
+            report="已经分析",
+        )
+    )
+
+    state.add_event(event)
+    snapshot = state.snapshot()
+
+    assert snapshot["events"][0].status is EventStatus.CLOUD_ANALYZED
