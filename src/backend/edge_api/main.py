@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import sys
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 import uvicorn
 from fastapi import FastAPI
@@ -45,7 +46,12 @@ app.include_router(tasks.router)
 
 
 def run() -> None:
+    settings = get_settings()
+    edge_url = urlparse(settings.edge_api_base_url)
     parser = argparse.ArgumentParser(description="Run the edge API server.")
+    parser.add_argument("--host", default=edge_url.hostname or "0.0.0.0", help="监听地址")
+    parser.add_argument("--port", type=int, default=edge_url.port or 8001, help="监听端口")
+    parser.add_argument("--no-reload", action="store_true", help="关闭开发热重载")
     parser.add_argument(
         "--debug-window",
         "--debug_window",
@@ -59,7 +65,7 @@ def run() -> None:
         sys.argv = [sys.argv[0], "--debug-window", "--offline", *runner_args]
         run_edge_runner()
         return
-    uvicorn.run("backend.edge_api.main:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("backend.edge_api.main:app", host=args.host, port=args.port, reload=not args.no_reload)
 
 
 if __name__ == "__main__":
