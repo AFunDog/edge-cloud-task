@@ -8,14 +8,18 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.cloud_api.cloud.database import initialize_database
+from backend.cloud_api.cloud.database import hydrate_runtime_state, initialize_database
+from backend.cloud_api.dependencies import get_event_repository
 from backend.cloud_api.routes import agent, edge, events, state, tasks
 from backend.shared.core.config import get_settings
+from backend.shared.core.state import runtime_state
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    initialize_database(get_settings())
+    settings = get_settings()
+    initialize_database(settings)
+    hydrate_runtime_state(runtime_state, get_event_repository(), settings.event_history_limit)
     yield
 
 

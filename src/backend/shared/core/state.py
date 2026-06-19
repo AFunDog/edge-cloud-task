@@ -54,6 +54,23 @@ class RuntimeState:
                     self._events[index] = event.model_copy(update={"status": EventStatus.CLOUD_ANALYZED})
                     break
 
+    def replace_history(
+        self,
+        events: list[SafetyEvent],
+        analysis_results: list[CloudAnalysisResponse],
+    ) -> None:
+        with self._lock:
+            self._events.clear()
+            self._analysis_results.clear()
+            for event in events[: self._events.maxlen]:
+                self._events.append(event)
+            for result in analysis_results[: self._analysis_results.maxlen]:
+                self._analysis_results.append(result)
+            analyzed_event_ids = {result.event_id for result in analysis_results}
+            for index, event in enumerate(self._events):
+                if event.event_id in analyzed_event_ids:
+                    self._events[index] = event.model_copy(update={"status": EventStatus.CLOUD_ANALYZED})
+
     def latest_detection(self, device_id: str | None = None) -> DetectionResult | None:
         with self._lock:
             for detection in self._detections:

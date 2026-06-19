@@ -102,6 +102,13 @@ export interface CloudAnalysisResponse {
   created_at: string
 }
 
+export interface EventReport {
+  event: SafetyEvent
+  analysis?: CloudAnalysisResponse | null
+  report_markdown: string
+  created_at: string
+}
+
 export interface SystemState {
   server_time: string
   edge_status: EdgeStatus[]

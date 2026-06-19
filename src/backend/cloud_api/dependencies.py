@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from backend.cloud_api.cloud.agent import CloudAgent
+from backend.cloud_api.cloud.database import CloudEventRepository
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.search import SearchTool
@@ -24,3 +25,8 @@ def get_agent() -> CloudAgent:
         ),
         knowledge_base=KnowledgeBase(settings.knowledge_dir),
     )
+
+
+@lru_cache
+def get_event_repository() -> CloudEventRepository:
+    return CloudEventRepository(get_settings())

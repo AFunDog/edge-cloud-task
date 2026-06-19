@@ -161,6 +161,13 @@ class CloudAnalysisResponse(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class EventReport(BaseModel):
+    event: SafetyEvent
+    analysis: CloudAnalysisResponse | None = None
+    report_markdown: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class AgentRequest(BaseModel):
     question: str
     device_id: str | None = None

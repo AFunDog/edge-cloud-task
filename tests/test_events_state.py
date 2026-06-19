@@ -90,3 +90,28 @@ def test_analysis_result_updates_by_event_id() -> None:
     assert len(snapshot["analysis_results"]) == 1
     assert snapshot["analysis_results"][0].conclusion == "第二次分析"
     assert snapshot["events"][0].status is EventStatus.CLOUD_ANALYZED
+
+
+def test_runtime_state_can_replace_persisted_history() -> None:
+    state = RuntimeState()
+    old_event = SafetyEvent(event_type="person_count", device_id="edge-a", summary="旧事件")
+    state.add_event(old_event)
+    restored_event = SafetyEvent(
+        event_type="long_head_down",
+        device_id="edge-a",
+        status=EventStatus.CLOUD_PENDING,
+        summary="恢复的事件",
+    )
+    restored_analysis = CloudAnalysisResponse(
+        event_id=restored_event.event_id,
+        risk_level=EventSeverity.WARNING,
+        conclusion="恢复的分析",
+        report="恢复的报告",
+    )
+
+    state.replace_history([restored_event], [restored_analysis])
+    snapshot = state.snapshot()
+
+    assert [event.event_id for event in snapshot["events"]] == [restored_event.event_id]
+    assert snapshot["events"][0].status is EventStatus.CLOUD_ANALYZED
+    assert snapshot["analysis_results"][0].event_id == restored_event.event_id

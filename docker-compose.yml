@@ -27,6 +27,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      POSTGRES_PERSISTENCE_ENABLED: "true"
       POSTGRES_VECTOR_ENABLED: "true"
     ports:
       - "8000:8000"

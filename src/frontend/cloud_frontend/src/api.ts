@@ -1,4 +1,4 @@
-import type { AgentRequest, AgentResponse, ScheduleDecision, SystemState, TaskRequest } from './types'
+import type { AgentRequest, AgentResponse, EventReport, ScheduleDecision, SystemState, TaskRequest } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_CLOUD_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -35,4 +35,8 @@ export function scheduleTask(payload: TaskRequest): Promise<ScheduleDecision> {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export function fetchEventReport(eventId: string): Promise<EventReport> {
+  return request<EventReport>(`/api/events/${encodeURIComponent(eventId)}/report`)
 }

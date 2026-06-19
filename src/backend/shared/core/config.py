@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     postgres_user: str = "edge_cloud"
     postgres_password: str = "edge_cloud_dev"
     postgres_schema: str = "public"
+    postgres_persistence_enabled: bool = False
     postgres_vector_enabled: bool = False
+    event_history_limit: int = 200
     edge_device_id: str = "edge-camera-01"
     edge_collector_enabled: bool = True
     edge_task: str = "姿态识别"

@@ -592,6 +592,56 @@ python -m compileall src
 - 重启后关键事件不丢失。
 - 可以查看历史异常和云端分析报告。
 
+实现状态：已完成。
+
+已落地能力：
+
+- 云端启动时由后端自主维护 PostgreSQL 表结构，不依赖 `data/postgres/init/001-enable-pgvector.sql`：
+  - `cloud_events`：保存边端事件完整 payload、状态、证据、指标和检索文本。
+  - `cloud_analysis_results`：保存 Agent 分析完整 payload、报告、判断依据、处置建议和检索文本。
+- `POSTGRES_PERSISTENCE_ENABLED=true` 时，`/api/events` 与 `/api/events/analyze` 会同步写入 PostgreSQL；Docker Compose 云端服务默认开启。
+- 云端启动后会按 `EVENT_HISTORY_LIMIT` 从 PostgreSQL 恢复事件和分析结果到运行态，控制台重启后仍能看到历史异常。
+- 新增事件检索接口 `GET /api/events/search?q=...`，可按事件类型、摘要、证据、指标和 Agent 报告内容检索。
+- 新增事件报告接口 `GET /api/events/{event_id}/report`，返回可导出的 Markdown 报告，包含边端摘要、证据、指标、云端结论、判断依据和处置建议。
+- 云端控制台事件页支持查看报告并导出 Markdown。
+
+落地文件：
+
+- `src/backend/shared/domain/models.py`
+- `src/backend/shared/core/config.py`
+- `src/backend/shared/core/state.py`
+- `src/backend/cloud_api/cloud/database.py`
+- `src/backend/cloud_api/dependencies.py`
+- `src/backend/cloud_api/main.py`
+- `src/backend/cloud_api/routes/events.py`
+- `src/frontend/cloud_frontend/src/api.ts`
+- `src/frontend/cloud_frontend/src/types.ts`
+- `src/frontend/cloud_frontend/src/App.vue`
+- `src/frontend/cloud_frontend/src/styles.css`
+- `docker-compose.yml`
+- `.env.example`
+- `tests/test_cloud_events.py`
+- `tests/test_events_state.py`
+
+配置说明：
+
+```env
+POSTGRES_PERSISTENCE_ENABLED=true
+POSTGRES_VECTOR_ENABLED=true
+EVENT_HISTORY_LIMIT=200
+```
+
+本地不想连接数据库时保持 `POSTGRES_PERSISTENCE_ENABLED=false`，系统仍使用内存态运行，测试默认不会触发真实 PostgreSQL。
+
+验证命令：
+
+```powershell
+python -m pytest tests/test_cloud_events.py tests/test_events_state.py
+npm run build # 在 src/frontend/cloud_frontend
+python -m pytest
+python -m compileall src
+```
+
 ## 11. 演示闭环设计
 
 推荐最终演示流程：

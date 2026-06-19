@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchState, scheduleTask, sendAgentChat } from './api'
-import type { CloudAnalysisResponse, Detection, DetectionResult, SafetyEvent, SystemState, TaskLog } from './types'
+import { fetchEventReport, fetchState, scheduleTask, sendAgentChat } from './api'
+import type {
+  CloudAnalysisResponse,
+  Detection,
+  DetectionResult,
+  EventReport,
+  SafetyEvent,
+  SystemState,
+  TaskLog,
+} from './types'
 import { formatNumber, formatTime } from './utils/format'
 import {
   COCO_SKELETON,
@@ -19,6 +27,8 @@ const deviceId = ref('edge-camera-01')
 const taskText = ref('车辆计数')
 const chatResult = ref<any>(null)
 const scheduleResult = ref<any>(null)
+const selectedReport = ref<EventReport | null>(null)
+const reportError = ref('')
 const stageRef = ref<HTMLElement | null>(null)
 const stageSize = ref({ width: 0, height: 0 })
 let timer: number | null = null
@@ -59,6 +69,25 @@ async function submitSchedule(): Promise<void> {
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc)
   }
+}
+
+async function openReport(event: SafetyEvent): Promise<void> {
+  try {
+    reportError.value = ''
+    selectedReport.value = await fetchEventReport(event.event_id)
+  } catch (exc) {
+    reportError.value = exc instanceof Error ? exc.message : String(exc)
+  }
+}
+
+function exportReport(report: EventReport): void {
+  const blob = new Blob([report.report_markdown], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `event-${report.event.event_id}.md`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function updateStageSize(): void {
@@ -442,6 +471,9 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
                 <div v-if="analysisFor(event)" class="event-analysis-link">
                   {{ analysisFor(event)?.conclusion }}
                 </div>
+                <div class="event-actions">
+                  <button class="mini-btn" type="button" @click="openReport(event)">查看报告</button>
+                </div>
               </article>
             </div>
             <div v-else class="empty-state">暂无事件。边端生成的本地事件和云端候选会显示在这里。</div>
@@ -449,6 +481,17 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
 
           <div class="analysis-panel">
             <div class="panel-title">云端 Agent 分析</div>
+            <div v-if="reportError" class="report-error">{{ reportError }}</div>
+            <article v-if="selectedReport" class="report-panel">
+              <div class="event-head">
+                <div>
+                  <strong>事件报告</strong>
+                  <div class="event-meta">{{ selectedReport.event.event_id }} · {{ formatTime(selectedReport.created_at) }}</div>
+                </div>
+                <button class="mini-btn primary" type="button" @click="exportReport(selectedReport)">导出 Markdown</button>
+              </div>
+              <pre>{{ selectedReport.report_markdown }}</pre>
+            </article>
             <div v-if="analysisResults.length" class="analysis-list">
               <article v-for="item in analysisResults" :key="item.event_id" class="analysis-card" :class="item.risk_level">
                 <div class="event-head">
