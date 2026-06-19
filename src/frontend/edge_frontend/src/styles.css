@@ -596,6 +596,100 @@ button {
   padding: 12px 14px;
 }
 
+.event-list {
+  display: grid;
+  gap: 6px;
+}
+
+.event-item,
+.analysis-item {
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.event-item.warning,
+.analysis-item.warning {
+  border-color: rgba(255, 192, 106, 0.25);
+}
+
+.event-item.critical,
+.analysis-item.critical {
+  border-color: rgba(255, 122, 122, 0.28);
+  background: rgba(255, 122, 122, 0.045);
+}
+
+.event-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.event-name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.event-status,
+.risk-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.event-status.edge_resolved,
+.risk-chip.info {
+  color: var(--text-2);
+  background: var(--bg-card-hover);
+}
+
+.event-status.cloud_pending,
+.risk-chip.warning {
+  color: var(--warn);
+  background: rgba(255, 192, 106, 0.12);
+}
+
+.event-status.cloud_analyzed {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.risk-chip.critical {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.event-summary {
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.event-meta {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+.section-divider {
+  height: 1px;
+  margin: 14px 0;
+  background: var(--border);
+}
+
 .log-task {
   font-weight: 600;
   font-size: 13px;

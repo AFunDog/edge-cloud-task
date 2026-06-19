@@ -191,6 +191,11 @@ onBeforeUnmount(() => {
 const edgeStatus = computed(() => state.value?.edge_status[0] ?? null)
 const latestDetection = computed(() => state.value?.recent_detections[0] ?? null)
 const taskLogs = computed(() => state.value?.task_logs ?? [])
+const events = computed(() => state.value?.events ?? [])
+const analysisResults = computed(() => state.value?.analysis_results ?? [])
+const latestAnalysis = computed(() => analysisResults.value[0] ?? null)
+const pendingEvents = computed(() => events.value.filter((event) => event.status === 'cloud_pending'))
+const analyzedEvents = computed(() => events.value.filter((event) => event.status === 'cloud_analyzed'))
 const pose = computed(() => latestDetection.value?.pose ?? null)
 const detections = computed(() => latestDetection.value?.detections ?? [])
 const showVideoAnnotations = computed(() => rtcConnected.value && latestDetection.value !== null)
@@ -242,6 +247,37 @@ function actionLabel(value: string): string {
     unknown: '待复核',
   }
   return map[value] ?? value
+}
+
+function eventTypeLabel(value: string): string {
+  const map: Record<string, string> = {
+    person_count: '人数变化',
+    pose_raising_hand: '举手',
+    pose_head_down: '低头',
+    pose_head_left: '头部左偏',
+    pose_head_right: '头部右偏',
+    pose_upper_body_left: '上身左倾',
+    pose_upper_body_right: '上身右倾',
+    long_head_down: '长时间低头',
+    fall_suspected: '疑似摔倒',
+    crowding: '多人聚集',
+    pose_uncertain: '姿态不确定',
+  }
+  return map[value] ?? value
+}
+
+function statusLabel(value: string): string {
+  const map: Record<string, string> = {
+    edge_resolved: '边端完成',
+    cloud_pending: '云端候选',
+    cloud_analyzed: '云端已分析',
+  }
+  return map[value] ?? value
+}
+
+function severityLabel(value: string): string {
+  const map: Record<string, string> = { info: 'INFO', warning: 'WARN', critical: 'CRITICAL' }
+  return map[value] ?? value.toUpperCase()
 }
 
 // ---------- 姿态关键点与骨架渲染辅助 ----------
@@ -416,7 +452,15 @@ function keypointTitle(p: NormalizedKeypoint): string {
             </div>
             <div class="metric-card">
               <div class="metric-label">云端候选</div>
-              <div class="metric-value small">{{ pose?.needs_cloud ? 'YES' : 'NO' }}</div>
+              <div class="metric-value small">{{ pendingEvents.length }}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">边端事件</div>
+              <div class="metric-value small">{{ events.length }}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">云端分析</div>
+              <div class="metric-value small">{{ analyzedEvents.length }}</div>
             </div>
           </div>
         </section>
@@ -442,6 +486,35 @@ function keypointTitle(p: NormalizedKeypoint): string {
         </section>
 
         <section class="sidebar-section logs-section">
+          <div class="sidebar-section-title">边云事件</div>
+          <div v-if="events.length" class="event-list">
+            <div v-for="event in events.slice(0, 5)" :key="event.event_id" class="event-item" :class="event.severity">
+              <div class="event-head">
+                <span class="event-name">{{ eventTypeLabel(event.event_type) }}</span>
+                <span class="event-status" :class="event.status">{{ statusLabel(event.status) }}</span>
+              </div>
+              <div class="event-summary">{{ event.summary }}</div>
+              <div class="event-meta">
+                <span class="risk-chip" :class="event.severity">{{ severityLabel(event.severity) }}</span>
+                {{ formatTime(event.created_at) }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="no-data">边端事件会在这里实时汇总</div>
+
+          <div class="section-divider"></div>
+          <div class="sidebar-section-title">云端分析</div>
+          <div v-if="latestAnalysis" class="analysis-item" :class="latestAnalysis.risk_level">
+            <div class="event-head">
+              <span class="event-name">{{ latestAnalysis.conclusion }}</span>
+              <span class="risk-chip" :class="latestAnalysis.risk_level">{{ severityLabel(latestAnalysis.risk_level) }}</span>
+            </div>
+            <div class="event-summary">{{ latestAnalysis.suggestions.slice(0, 2).join('；') }}</div>
+            <div class="event-meta">知识库 {{ latestAnalysis.used_knowledge ? 'YES' : 'NO' }} · 搜索 {{ latestAnalysis.used_search ? 'YES' : 'NO' }}</div>
+          </div>
+          <div v-else class="no-data">复杂事件的云端分析会显示在这里</div>
+
+          <div class="section-divider"></div>
           <div class="sidebar-section-title">边端日志</div>
           <div v-if="error" class="notice error">{{ error }}</div>
           <div v-else-if="loading" class="notice">正在拉取边端状态...</div>

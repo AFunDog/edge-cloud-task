@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchState, scheduleTask, sendAgentChat } from './api'
-import type { Detection, DetectionResult, SystemState, TaskLog } from './types'
+import type { CloudAnalysisResponse, Detection, DetectionResult, SafetyEvent, SystemState, TaskLog } from './types'
 import { formatNumber, formatTime } from './utils/format'
 import {
   COCO_SKELETON,
@@ -91,12 +91,22 @@ onBeforeUnmount(() => {
 const recentDetections = computed(() => state.value?.recent_detections ?? [])
 const edgeStatus = computed(() => state.value?.edge_status ?? [])
 const taskLogs = computed(() => state.value?.task_logs ?? [])
+const events = computed(() => state.value?.events ?? [])
+const analysisResults = computed(() => state.value?.analysis_results ?? [])
 const latestDetection = computed(() => recentDetections.value[0] || null)
 const serverTime = computed(() => formatTime(state.value?.server_time))
-const activeTab = ref<'home' | 'settings' | 'logs'>('home')
+const activeTab = ref<'home' | 'events' | 'settings' | 'logs'>('home')
 const onlineEdgeCount = computed(() => edgeStatus.value.filter((item) => item.online).length)
-const totalDetectionCount = computed(() => recentDetections.value.reduce((sum, item) => sum + (item.detections?.length || 0), 0))
 const cloudStatus = computed(() => error.value ? 'DEGRADED' : 'ONLINE')
+const pendingEvents = computed(() => events.value.filter((item) => item.status === 'cloud_pending'))
+const criticalEvents = computed(() => events.value.filter((item) => item.severity === 'critical'))
+const latestEvent = computed(() => events.value[0] || null)
+const latestAnalysis = computed(() => analysisResults.value[0] || null)
+const analysisByEvent = computed(() => {
+  const map = new Map<string, CloudAnalysisResponse>()
+  for (const item of analysisResults.value) map.set(item.event_id, item)
+  return map
+})
 const mediaOverlayStyle = computed<Record<string, string>>(() => {
   const sourceWidth = latestDetection.value?.frame_width || 640
   const sourceHeight = latestDetection.value?.frame_height || 360
@@ -153,6 +163,41 @@ function keypointTitle(p: NormalizedKeypoint): string {
   const name = p.kpt.name ?? `keypoint_${p.index}`
   return `${name} · ${formatNumber(p.kpt.confidence, 2)}`
 }
+
+function eventTypeLabel(value: string): string {
+  const map: Record<string, string> = {
+    person_count: '人数变化',
+    pose_raising_hand: '举手',
+    pose_head_down: '低头',
+    pose_head_left: '头部左偏',
+    pose_head_right: '头部右偏',
+    pose_upper_body_left: '上身左倾',
+    pose_upper_body_right: '上身右倾',
+    long_head_down: '长时间低头',
+    fall_suspected: '疑似摔倒',
+    crowding: '多人聚集',
+    pose_uncertain: '姿态不确定',
+  }
+  return map[value] ?? value
+}
+
+function severityLabel(value: string): string {
+  const map: Record<string, string> = { info: 'INFO', warning: 'WARN', critical: 'CRITICAL' }
+  return map[value] ?? value.toUpperCase()
+}
+
+function statusLabel(value: string): string {
+  const map: Record<string, string> = {
+    edge_resolved: '边端完成',
+    cloud_pending: '等待云端',
+    cloud_analyzed: '云端已分析',
+  }
+  return map[value] ?? value
+}
+
+function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
+  return analysisByEvent.value.get(event.event_id)
+}
 </script>
 
 <template>
@@ -169,6 +214,7 @@ function keypointTitle(p: NormalizedKeypoint): string {
         </div>
         <nav class="tab-group">
           <button class="tab-btn" :class="{ active: activeTab === 'home' }" @click="activeTab = 'home'">监控</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'events' }" @click="activeTab = 'events'">事件</button>
           <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">智能体</button>
           <button class="tab-btn" :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">日志</button>
         </nav>
@@ -277,14 +323,33 @@ function keypointTitle(p: NormalizedKeypoint): string {
               <div class="metric-value small">{{ latestDetection ? `${formatNumber(latestDetection.inference_ms, 1)}ms` : '--' }}</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label">快照数</div>
-              <div class="metric-value">{{ recentDetections.length }}</div>
+              <div class="metric-label">事件</div>
+              <div class="metric-value">{{ events.length }}</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label">总目标</div>
-              <div class="metric-value">{{ totalDetectionCount }}</div>
+              <div class="metric-label">待分析</div>
+              <div class="metric-value">{{ pendingEvents.length }}</div>
             </div>
           </div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">边云调度</div>
+          <div class="event-mini-grid">
+            <div class="flow-cell edge">
+              <span>EDGE</span>
+              <strong>{{ events.filter((item) => item.status === 'edge_resolved').length }}</strong>
+            </div>
+            <div class="flow-cell cloud">
+              <span>CLOUD</span>
+              <strong>{{ analysisResults.length }}</strong>
+            </div>
+          </div>
+          <div v-if="latestAnalysis" class="analysis-brief">
+            <span class="risk-chip" :class="latestAnalysis.risk_level">{{ severityLabel(latestAnalysis.risk_level) }}</span>
+            <p>{{ latestAnalysis.conclusion }}</p>
+          </div>
+          <div v-else class="no-data">暂无云端分析结果</div>
         </div>
 
         <!-- Model info -->
@@ -319,7 +384,92 @@ function keypointTitle(p: NormalizedKeypoint): string {
           </div>
           <div v-else class="no-data">暂无边端在线</div>
         </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">最近事件</div>
+          <div v-if="latestEvent" class="event-card compact" :class="latestEvent.severity">
+            <div class="event-head">
+              <strong>{{ eventTypeLabel(latestEvent.event_type) }}</strong>
+              <span class="status-chip" :class="latestEvent.status">{{ statusLabel(latestEvent.status) }}</span>
+            </div>
+            <p>{{ latestEvent.summary }}</p>
+            <div class="event-meta">{{ latestEvent.device_id }} · {{ formatTime(latestEvent.created_at) }}</div>
+          </div>
+          <div v-else class="no-data">暂无边端事件</div>
+        </div>
       </aside>
+    </main>
+
+    <!-- Events -->
+    <main v-else-if="activeTab === 'events'" class="main main-events">
+      <section class="events-board">
+        <div class="events-summary">
+          <div class="summary-tile">
+            <span>总事件</span>
+            <strong>{{ events.length }}</strong>
+          </div>
+          <div class="summary-tile warning">
+            <span>待云端</span>
+            <strong>{{ pendingEvents.length }}</strong>
+          </div>
+          <div class="summary-tile critical">
+            <span>高风险</span>
+            <strong>{{ criticalEvents.length }}</strong>
+          </div>
+          <div class="summary-tile">
+            <span>分析报告</span>
+            <strong>{{ analysisResults.length }}</strong>
+          </div>
+        </div>
+
+        <div class="events-layout">
+          <div class="event-list-panel">
+            <div class="panel-title">异常事件与边云分工</div>
+            <div v-if="events.length" class="event-list">
+              <article v-for="event in events" :key="event.event_id" class="event-card" :class="event.severity">
+                <div class="event-head">
+                  <div>
+                    <strong>{{ eventTypeLabel(event.event_type) }}</strong>
+                    <div class="event-meta">{{ event.device_id }} · {{ formatTime(event.created_at) }}</div>
+                  </div>
+                  <div class="chip-row">
+                    <span class="risk-chip" :class="event.severity">{{ severityLabel(event.severity) }}</span>
+                    <span class="status-chip" :class="event.status">{{ statusLabel(event.status) }}</span>
+                  </div>
+                </div>
+                <p>{{ event.summary }}</p>
+                <div v-if="event.evidence.length" class="evidence-line">{{ event.evidence.slice(0, 2).join(' / ') }}</div>
+                <div v-if="analysisFor(event)" class="event-analysis-link">
+                  {{ analysisFor(event)?.conclusion }}
+                </div>
+              </article>
+            </div>
+            <div v-else class="empty-state">暂无事件。边端生成的本地事件和云端候选会显示在这里。</div>
+          </div>
+
+          <div class="analysis-panel">
+            <div class="panel-title">云端 Agent 分析</div>
+            <div v-if="analysisResults.length" class="analysis-list">
+              <article v-for="item in analysisResults" :key="item.event_id" class="analysis-card" :class="item.risk_level">
+                <div class="event-head">
+                  <strong>{{ item.conclusion }}</strong>
+                  <span class="risk-chip" :class="item.risk_level">{{ severityLabel(item.risk_level) }}</span>
+                </div>
+                <div class="analysis-section">
+                  <span>判断依据</span>
+                  <p>{{ item.reasoning.slice(0, 3).join('；') || '--' }}</p>
+                </div>
+                <div class="analysis-section">
+                  <span>处置建议</span>
+                  <p>{{ item.suggestions.slice(0, 3).join('；') || '--' }}</p>
+                </div>
+                <div class="event-meta">知识库 {{ item.used_knowledge ? 'YES' : 'NO' }} · 搜索 {{ item.used_search ? 'YES' : 'NO' }} · {{ formatTime(item.created_at) }}</div>
+              </article>
+            </div>
+            <div v-else class="empty-state">云端分析报告会显示在这里。</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Settings -->

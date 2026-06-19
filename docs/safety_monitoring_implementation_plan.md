@@ -390,6 +390,13 @@ data/knowledge/
 
 重点突出“边端实时处理”。
 
+阶段 4 已落地：
+
+- 右侧实时指标增加边端事件数、云端候选数、云端分析数。
+- 新增“边云事件”列表，展示事件类型、风险等级、处理状态和摘要。
+- 新增“云端分析”摘要，展示最近一次 Agent 结论、建议、是否使用知识库/搜索。
+- WebSocket `event` 和 `analysis_result` 消息会实时更新页面状态。
+
 ### 8.2 云端控制台
 
 增强当前云端控制台：
@@ -409,6 +416,14 @@ data/knowledge/
 - 事件：异常事件列表、风险等级、分析状态。
 - 智能体：对话和事件分析。
 - 日志：边云调度和任务日志。
+
+阶段 4 已落地：
+
+- 顶部标签新增“事件”。
+- 监控页右侧新增边云调度摘要、最近事件、最近 Agent 分析。
+- 事件页新增全局统计：总事件、待云端、高风险、分析报告。
+- 事件页展示异常事件列表，包含边端完成、等待云端、云端已分析三种状态。
+- 事件页展示云端 Agent 分析卡片，包括风险等级、判断依据、处置建议、知识库/搜索使用情况。
 
 ## 9. Docker 与部署方案
 
@@ -545,6 +560,24 @@ python -m compileall src/backend/cloud_api src/backend/edge_api/runtime/pipeline
 
 - 演示时能清楚看到边云分工。
 - 管理平台不只是姿态 Demo，而是安全监测系统。
+
+实现状态：已完成。
+
+落地文件：
+
+- `src/frontend/edge_frontend/src/App.vue`
+- `src/frontend/edge_frontend/src/styles.css`
+- `src/frontend/cloud_frontend/src/App.vue`
+- `src/frontend/cloud_frontend/src/styles.css`
+
+验证命令：
+
+```powershell
+npm run build # 在 src/frontend/edge_frontend
+npm run build # 在 src/frontend/cloud_frontend
+python -m pytest
+python -m compileall src
+```
 
 ### 阶段 5：持久化与报告
 
