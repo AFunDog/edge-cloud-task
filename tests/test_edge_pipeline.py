@@ -1,8 +1,10 @@
 from backend.edge_api.runtime.pipeline import EdgePipeline
 from backend.shared.domain.models import (
+    CloudAnalysisResponse,
     BoundingBox,
     Detection,
     DetectionResult,
+    EventSeverity,
     EventStatus,
     ExecutionTarget,
     Keypoint,
@@ -16,6 +18,8 @@ class FakeCloudClient:
         self.logs = []
         self.statuses = []
         self.agent_requests = []
+        self.events = []
+        self.analysis_requests = []
 
     def is_available(self) -> bool:
         return self.available
@@ -31,6 +35,20 @@ class FakeCloudClient:
     def publish_status(self, status) -> bool:
         self.statuses.append(status)
         return True
+
+    def publish_event(self, event) -> bool:
+        self.events.append(event)
+        return True
+
+    def request_cloud_analysis(self, request):
+        self.analysis_requests.append(request)
+        return CloudAnalysisResponse(
+            event_id=request.event.event_id,
+            risk_level=EventSeverity.WARNING,
+            conclusion="云端事件分析完成",
+            suggestions=["继续观察"],
+            report="云端事件分析完成",
+        )
 
     def ask_agent(self, request):
         from backend.shared.domain.models import AgentResponse
@@ -71,6 +89,7 @@ def test_pipeline_keeps_stable_pose_on_edge_and_syncs_cloud() -> None:
     assert any(event.event_type == "pose_raising_hand" for event in cycle.events)
     assert cycle.cloud_synced is True
     assert len(cloud.detections) == 1
+    assert len(cloud.events) == len(cycle.events)
     assert len(cloud.logs) == 1
     assert not cloud.agent_requests
 
@@ -86,8 +105,10 @@ def test_pipeline_sends_uncertain_pose_to_cloud_agent() -> None:
     assert cycle.decision.target == ExecutionTarget.CLOUD
     assert any(event.status is EventStatus.CLOUD_PENDING for event in cycle.events)
     assert cycle.agent_called is True
+    assert cycle.cloud_analysis_requested is True
     assert cycle.task_log.result_summary.startswith("边端事件")
-    assert len(cloud.agent_requests) == 1
+    assert len(cloud.analysis_requests) == 1
+    assert not cloud.agent_requests
     assert not cloud.logs
 
 

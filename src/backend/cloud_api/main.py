@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.cloud_api.cloud.database import initialize_database
-from backend.cloud_api.routes import agent, edge, state, tasks
+from backend.cloud_api.routes import agent, edge, events, state, tasks
 from backend.shared.core.config import get_settings
 
 
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(state.router)
 app.include_router(edge.router)
+app.include_router(events.router)
 app.include_router(tasks.router)
 app.include_router(agent.router)
 

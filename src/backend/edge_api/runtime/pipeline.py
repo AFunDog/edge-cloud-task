@@ -8,6 +8,8 @@ from backend.edge_api.runtime.events import EdgeEventAnalyzer
 from backend.edge_api.runtime.pose import PoseAnalyzer
 from backend.shared.domain.models import (
     AgentRequest,
+    CloudAnalysisRequest,
+    CloudAnalysisResponse,
     DetectionResult,
     EventStatus,
     ExecutionTarget,
@@ -29,6 +31,8 @@ class EdgeCycle:
     cloud_available: bool = False
     cloud_synced: bool = False
     agent_called: bool = False
+    cloud_analysis_requested: bool = False
+    cloud_analysis_results: list[CloudAnalysisResponse] | None = None
     cloud_error: str = ""
 
 
@@ -119,9 +123,40 @@ class EdgePipeline:
 
         cloud_log = cycle.task_log.model_copy(deep=True)
         detection_ok = self.cloud_client.publish_detection(cycle.detection)
+        event_ok = True
+        for event in cycle.events:
+            event_ok = self.cloud_client.publish_event(event) and event_ok
+
+        pending_events = [event for event in cycle.events if event.status == EventStatus.CLOUD_PENDING]
+        if pending_events and self.cloud_agent_enabled:
+            cycle.cloud_analysis_results = []
+            for event in pending_events:
+                try:
+                    response = self.cloud_client.request_cloud_analysis(
+                        CloudAnalysisRequest(
+                            event=event,
+                            detection=cycle.detection,
+                            image_jpeg_base64=cycle.detection.image_jpeg_base64,
+                            recent_context=[
+                                {
+                                    "task": self.task,
+                                    "decision": cycle.decision.model_dump(mode="json"),
+                                    "task_log": cycle.task_log.model_dump(mode="json"),
+                                }
+                            ],
+                        )
+                    )
+                    cycle.cloud_analysis_requested = True
+                    cycle.cloud_analysis_results.append(response)
+                    cloud_log.result_summary = response.conclusion
+                    cycle.agent_called = True
+                    self._last_agent_call_at = time.monotonic()
+                except Exception as exc:
+                    cycle.cloud_error = f"云端事件分析失败：{exc}"
         if (
             cycle.decision.target == ExecutionTarget.CLOUD
             and self.cloud_agent_enabled
+            and not pending_events
             and self._agent_call_due()
         ):
             try:
@@ -145,7 +180,7 @@ class EdgePipeline:
                 cycle.cloud_error = f"云端智能体调用失败：{exc}"
 
         log_ok = True if cycle.agent_called else self.cloud_client.publish_task_log(cloud_log)
-        cycle.cloud_synced = detection_ok and log_ok
+        cycle.cloud_synced = detection_ok and event_ok and log_ok
 
     def _is_cloud_available(self) -> bool:
         now = time.monotonic()

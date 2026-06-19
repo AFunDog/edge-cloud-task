@@ -197,6 +197,12 @@ class EdgeCollector:
 
     def _sync_cloud(self, cycle: EdgeCycle) -> None:
         self._pipeline.sync_cloud(cycle)
+        for result in cycle.cloud_analysis_results or []:
+            runtime_state.add_analysis_result(result)
+            self._broadcast({
+                "type": "analysis_result",
+                "data": result.model_dump(mode="json"),
+            })
         self._pipeline.publish_status(collect_edge_status(cycle.detection.device_id, cycle.detection.fps))
         self.last_cloud_cycle = cycle
 

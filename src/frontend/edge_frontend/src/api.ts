@@ -1,4 +1,5 @@
 import type {
+  CloudAnalysisResponse,
   DetectionResult,
   EdgeStatus,
   SafetyEvent,
@@ -48,6 +49,7 @@ export type StreamMessage =
   | { type: 'status'; data: EdgeStatus }
   | { type: 'task_log'; data: TaskLog }
   | { type: 'event'; data: SafetyEvent }
+  | { type: 'analysis_result'; data: CloudAnalysisResponse }
   | { type: 'error'; message: string }
 
 export interface StreamCallbacks {
@@ -56,6 +58,7 @@ export interface StreamCallbacks {
   onSnapshot?: (data: SystemState) => void
   onTaskLog?: (data: TaskLog) => void
   onEvent?: (data: SafetyEvent) => void
+  onAnalysisResult?: (data: CloudAnalysisResponse) => void
   onError?: (message: string) => void
   onClose?: () => void
   onOpen?: () => void
@@ -114,6 +117,9 @@ export function connectStream(callbacks: StreamCallbacks): { close: () => void }
             break
           case 'event':
             callbacks.onEvent?.(msg.data)
+            break
+          case 'analysis_result':
+            callbacks.onAnalysisResult?.(msg.data)
             break
           case 'error':
             callbacks.onError?.(msg.message)

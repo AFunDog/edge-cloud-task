@@ -8,7 +8,16 @@ from uuid import uuid4
 
 import httpx
 
-from backend.shared.domain.models import AgentRequest, AgentResponse, DetectionResult, EdgeStatus, SafetyEvent, TaskLog
+from backend.shared.domain.models import (
+    AgentRequest,
+    AgentResponse,
+    CloudAnalysisRequest,
+    CloudAnalysisResponse,
+    DetectionResult,
+    EdgeStatus,
+    SafetyEvent,
+    TaskLog,
+)
 
 
 class EdgeClient:
@@ -208,7 +217,13 @@ class CloudClient:
         return self._post_json("/api/tasks/logs", log.model_dump(mode="json"), timeout=5)
 
     def publish_event(self, event: SafetyEvent) -> bool:
-        return self._post_json("/api/edge/events", event.model_dump(mode="json"), timeout=5)
+        return self._post_json("/api/events", event.model_dump(mode="json"), timeout=5)
+
+    def request_cloud_analysis(self, request: CloudAnalysisRequest) -> CloudAnalysisResponse:
+        with httpx.Client(timeout=30) as client:
+            response = client.post(f"{self.base_url}/api/events/analyze", json=request.model_dump(mode="json"))
+            response.raise_for_status()
+            return CloudAnalysisResponse.model_validate(response.json())
 
     def ask_agent(self, request: AgentRequest) -> AgentResponse:
         with httpx.Client(timeout=30) as client:

@@ -251,8 +251,7 @@ DetectionResult -> PoseAnalyzer -> EdgeEventAnalyzer -> TaskScheduler -> EdgeCyc
 - 如果存在 `cloud_pending` 事件，调度决策会切到 `cloud / complex`，并在任务日志中说明边端生成了复杂安全事件。
 - `EdgeCollector` 会把事件写入 `RuntimeState`，并通过 WebSocket 广播 `event` 消息。
 - 本地边端接口新增 `POST /api/edge/events`，独立 runner 模式也能把事件写入边端 API 状态层。
-
-`cloud_analysis` 和 `cloud_analysis_requested` 暂未加入 `EdgeCycle`，原因是阶段 3 还需要先落云端事件接收与 Agent 分析接口；避免在阶段 2 放置空字段造成语义漂移。
+- 阶段 3 已继续扩展 `EdgeCycle.cloud_analysis_requested` 和 `EdgeCycle.cloud_analysis_results`，用于记录云端结构化分析返回。
 
 ### 6.3 边端上报
 
@@ -278,7 +277,12 @@ src/backend/edge_api/runtime/client.py
 
 - `EdgeClient.publish_event(event)` -> `POST /api/edge/events`
 
-云端事件上报会在阶段 3 随 `cloud_api/routes/events.py` 一起完成。
+阶段 3 已补充云端上报能力：
+
+- `CloudClient.publish_event(event)` -> `POST /api/events`
+- `CloudClient.request_cloud_analysis(request)` -> `POST /api/events/analyze`
+- `EdgePipeline.sync_cloud()` 会先同步检测结果和事件，再对 `cloud_pending` 事件请求云端 Agent 结构化分析。
+- `EdgeCollector` 会把云端分析结果写回本地 `RuntimeState`，并通过 WebSocket 广播 `analysis_result`。
 
 ## 7. 云端实现方案
 
@@ -296,6 +300,14 @@ src/backend/cloud_api/routes/events.py
 - `GET /api/events`：查看事件列表。
 - `POST /api/events/analyze`：云端 Agent 分析复杂事件。
 
+阶段 3 已落地：
+
+- `POST /api/events`：接收并幂等写入 `SafetyEvent`。
+- `GET /api/events`：返回运行时事件列表。
+- `POST /api/events/analyze`：接收 `CloudAnalysisRequest`，调用 `CloudAgent.analyze_event()`，写入 `CloudAnalysisResponse`。
+- `GET /api/events/analysis`：返回云端分析结果列表。
+- `cloud_api/main.py` 已注册事件路由。
+
 ### 7.2 云端事件状态
 
 扩展：
@@ -310,6 +322,11 @@ src/backend/shared/core/state.py
 - `_analysis_results: deque[CloudAnalysisResponse]`
 
 后续可迁移到 PostgreSQL。
+
+阶段 3 已增强状态写入：
+
+- `RuntimeState.add_event()` 按 `event_id` 幂等更新，避免事件先上报再分析时重复出现。
+- `RuntimeState.add_analysis_result()` 写入分析结果后，会把对应事件状态更新为 `cloud_analyzed`。
 
 ### 7.3 Agent 分析提示词
 
@@ -331,6 +348,14 @@ Agent 输出结构：
 4. 处置建议
 5. 是否需要人工确认
 6. 面向报告的完整文字
+
+阶段 3 已落地 `CloudAgent.analyze_event()`：
+
+- 输入：`CloudAnalysisRequest(event, detection, image_jpeg_base64, recent_context)`。
+- 输出：`CloudAnalysisResponse(event_id, risk_level, conclusion, reasoning, suggestions, report, used_search, used_knowledge, traces)`。
+- 风险等级根据边端事件等级和事件类型归一化，例如 `fall_suspected` 会保持或升级为 `critical`。
+- 处置建议按事件类型生成，例如疑似摔倒、长时间低头、多人聚集、低置信度姿态分别给出不同建议。
+- 默认测试继续使用 mock LLM、local search、本地知识库，不触发外网或付费模型。
 
 ### 7.4 知识库内容
 
@@ -483,6 +508,30 @@ python -m compileall src/backend/edge_api/runtime/events.py src/backend/edge_api
 
 - 边端可上传事件。
 - 云端可返回风险等级、依据、建议和报告。
+
+实现状态：已完成。
+
+落地文件：
+
+- `src/backend/cloud_api/routes/events.py`
+- `src/backend/cloud_api/cloud/agent.py`
+- `src/backend/cloud_api/main.py`
+- `src/backend/edge_api/runtime/client.py`
+- `src/backend/edge_api/runtime/pipeline.py`
+- `src/backend/edge_api/runtime/collector.py`
+- `src/frontend/edge_frontend/src/api.ts`
+- `src/frontend/edge_frontend/src/App.vue`
+- `src/backend/shared/core/state.py`
+- `tests/test_agent.py`
+- `tests/test_cloud_events.py`
+- `tests/test_edge_pipeline.py`
+
+验证命令：
+
+```powershell
+python -m pytest tests/test_agent.py tests/test_cloud_events.py tests/test_edge_pipeline.py tests/test_events_state.py
+python -m compileall src/backend/cloud_api src/backend/edge_api/runtime/pipeline.py src/backend/edge_api/runtime/client.py src/backend/edge_api/runtime/collector.py
+```
 
 ### 阶段 4：前端展示
 

@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { connectStream, connectWebRTC, fetchState } from './api'
-import type { Detection, DetectionResult, EdgeStatus, SafetyEvent, SystemState, TaskLog } from './types'
+import type {
+  CloudAnalysisResponse,
+  Detection,
+  DetectionResult,
+  EdgeStatus,
+  SafetyEvent,
+  SystemState,
+  TaskLog,
+} from './types'
 import { formatNumber, formatTime } from './utils/format'
 import {
   COCO_SKELETON,
@@ -74,6 +82,17 @@ function applyEvent(event: SafetyEvent): void {
   state.value = { ...state.value, events: [event, ...state.value.events.slice(0, 199)] }
 }
 
+function applyAnalysisResult(result: CloudAnalysisResponse): void {
+  if (!state.value) return
+  state.value = {
+    ...state.value,
+    analysis_results: [result, ...state.value.analysis_results.slice(0, 199)],
+    events: state.value.events.map((event) =>
+      event.event_id === result.event_id ? { ...event, status: 'cloud_analyzed' } : event,
+    ),
+  }
+}
+
 function updateFrameSize(): void {
   if (!frameRef.value) return
   const rect = frameRef.value.getBoundingClientRect()
@@ -107,6 +126,7 @@ function openStream(): void {
     onStatus: applyEdgeStatus,
     onTaskLog: applyTaskLog,
     onEvent: applyEvent,
+    onAnalysisResult: applyAnalysisResult,
     onError: (msg) => { error.value = msg },
     onOpen: () => { connected.value = true; loading.value = false },
     onClose: () => { connected.value = false },

@@ -35,6 +35,10 @@ class RuntimeState:
 
     def add_event(self, event: SafetyEvent) -> None:
         with self._lock:
+            for index, existing in enumerate(self._events):
+                if existing.event_id == event.event_id:
+                    self._events[index] = event
+                    return
             self._events.appendleft(event)
 
     def add_analysis_result(self, result: CloudAnalysisResponse) -> None:
