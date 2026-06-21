@@ -88,6 +88,16 @@
 \usepackage{tabu,tikz}
 \usepackage{float}
 
+% 按模板习惯使用可浮动图表，避免正文中的 [H] 导致页面大面积留白。
+\makeatletter
+\let\template@figure\figure
+\let\endtemplate@figure\endfigure
+\renewenvironment{figure}[1][htbp]{\template@figure[htbp]}{\endtemplate@figure}
+\let\template@table\table
+\let\endtemplate@table\endtable
+\renewenvironment{table}[1][htbp]{\template@table[htbp]}{\endtemplate@table}
+\makeatother
+
 \usepackage{multirow}
 
 
