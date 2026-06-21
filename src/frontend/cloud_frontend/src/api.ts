@@ -58,3 +58,18 @@ export function getDailyReportMdUrl(dateStr: string = ''): string {
   const params = dateStr ? `?d=${encodeURIComponent(dateStr)}&fmt=md` : '?fmt=md'
   return `${API_BASE_URL}/api/reports/daily${params}`
 }
+
+export function fetchChatHistory(limit: number = 20): Promise<
+  Array<{
+    id: number
+    question: string
+    answer: string
+    device_id: string
+    traces: string[]
+    used_knowledge: boolean
+    used_search: boolean
+    created_at: string
+  }>
+> {
+  return request(`/api/agent/history?limit=${limit}`)
+}

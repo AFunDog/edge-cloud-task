@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.edge_api.runtime.pipeline import EdgePipeline
 from backend.shared.domain.models import (
-    CloudAnalysisResponse,
     BoundingBox,
+    CloudAnalysisResponse,
     Detection,
     DetectionResult,
     EventSeverity,
@@ -11,6 +11,8 @@ from backend.shared.domain.models import (
     ExecutionTarget,
     Keypoint,
 )
+
+_CN_TZ = timezone(timedelta(hours=8))
 
 
 class FakeCloudClient:
@@ -63,7 +65,7 @@ class FakeCloudClient:
 
 
 def _pose_detection(*, created_at=None) -> DetectionResult:
-    ts = created_at or datetime(2026, 6, 19, 14, 30, tzinfo=timezone.utc)
+    ts = created_at or datetime(2026, 6, 19, 14, 30, tzinfo=_CN_TZ)
     keypoints = [Keypoint(x=0, y=0, confidence=0) for _ in range(17)]
     keypoints[5] = Keypoint(x=100, y=200, confidence=0.95)
     keypoints[6] = Keypoint(x=150, y=200, confidence=0.95)

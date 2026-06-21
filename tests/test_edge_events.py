@@ -10,6 +10,8 @@ from backend.shared.domain.models import (
     PoseAnalysis,
 )
 
+_CN_TZ = timezone(timedelta(hours=8))
+
 
 def _person_detection(*, width: float = 100, height: float = 220, confidence: float = 0.9) -> Detection:
     return Detection(
@@ -125,7 +127,7 @@ def test_person_count_changes_are_not_swallowed_by_cooldown() -> None:
 
 
 def test_event_analyzer_marks_unauthorized_time_outside_allowed_hours() -> None:
-    night_time = datetime(2026, 6, 20, 3, 15, tzinfo=timezone.utc)
+    night_time = datetime(2026, 6, 20, 3, 15, tzinfo=_CN_TZ)
     analyzer = EdgeEventAnalyzer(
         EdgeEventAnalyzerConfig(
             allowed_hours_start="08:00",
@@ -142,7 +144,7 @@ def test_event_analyzer_marks_unauthorized_time_outside_allowed_hours() -> None:
 
 
 def test_event_analyzer_skips_unauthorized_time_in_allowed_hours() -> None:
-    day_time = datetime(2026, 6, 19, 14, 30, tzinfo=timezone.utc)
+    day_time = datetime(2026, 6, 19, 14, 30, tzinfo=_CN_TZ)
     analyzer = EdgeEventAnalyzer(
         EdgeEventAnalyzerConfig(
             allowed_hours_start="08:00",
@@ -156,7 +158,7 @@ def test_event_analyzer_skips_unauthorized_time_in_allowed_hours() -> None:
 
 
 def test_event_analyzer_skips_unauthorized_time_when_no_people() -> None:
-    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=timezone.utc)
+    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=_CN_TZ)
     analyzer = EdgeEventAnalyzer(
         EdgeEventAnalyzerConfig(reasonability_cooldown_seconds=0)
     )
@@ -190,7 +192,7 @@ def test_event_analyzer_skips_excessive_people_within_capacity() -> None:
 
 
 def test_reasonability_events_have_separate_cooldown() -> None:
-    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=timezone.utc)
+    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=_CN_TZ)
     analyzer = EdgeEventAnalyzer(
         EdgeEventAnalyzerConfig(
             allowed_hours_end="22:00",

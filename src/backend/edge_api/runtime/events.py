@@ -273,9 +273,10 @@ class EdgeEventAnalyzer:
     ) -> SafetyEvent | None:
         if not people:
             return None
+        local_now = now.astimezone()
         start_h, start_m = self._parse_time_str(self.config.allowed_hours_start)
         end_h, end_m = self._parse_time_str(self.config.allowed_hours_end)
-        current_time = (now.hour, now.minute)
+        current_time = (local_now.hour, local_now.minute)
         in_allowed = self._time_in_range(current_time, (start_h, start_m), (end_h, end_m))
         if in_allowed:
             return None
@@ -284,15 +285,15 @@ class EdgeEventAnalyzer:
             event_type="unauthorized_time",
             detection=detection,
             severity=EventSeverity.WARNING,
-            summary=f"当前时间 {now.strftime('%H:%M')} 不在允许时段（{self.config.allowed_hours_start}-{self.config.allowed_hours_end}），检测到 {count} 人。",
+            summary=f"当前时间 {local_now.strftime('%H:%M')} 不在允许时段（{self.config.allowed_hours_start}-{self.config.allowed_hours_end}），检测到 {count} 人。",
             evidence=[
-                f"current_time={now.strftime('%H:%M')}",
+                f"current_time={local_now.strftime('%H:%M')}",
                 f"allowed_start={self.config.allowed_hours_start}",
                 f"allowed_end={self.config.allowed_hours_end}",
                 f"person_count={count}",
             ],
             metrics={
-                "current_time": now.strftime("%H:%M"),
+                "current_time": local_now.strftime("%H:%M"),
                 "allowed_start": self.config.allowed_hours_start,
                 "allowed_end": self.config.allowed_hours_end,
                 "person_count": count,

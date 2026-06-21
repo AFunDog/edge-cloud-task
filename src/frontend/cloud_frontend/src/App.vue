@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchDailyReport, fetchEventReport, fetchState, getDailyReportMdUrl, scanHazards, scheduleTask, sendAgentChat } from './api'
+import { fetchChatHistory, fetchDailyReport, fetchEventReport, fetchState, getDailyReportMdUrl, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -18,6 +18,7 @@ import {
   type NormalizedKeypoint,
   type SkeletonEdge,
 } from './utils/pose'
+import { renderMarkdown } from './utils/markdown'
 
 const state = ref<SystemState | null>(null)
 const loading = ref(true)
@@ -26,6 +27,8 @@ const chatQuestion = ref('请分析当前边缘端画面是否存在异常，并
 const deviceId = ref('edge-camera-01')
 const taskText = ref('姿态识别')
 const chatResult = ref<any>(null)
+const chatHistory = ref<any[]>([])
+const chatHistoryLoaded = ref(false)
 const scheduleResult = ref<any>(null)
 const scanResult = ref<any>(null)
 const scanning = ref(false)
@@ -35,9 +38,16 @@ const dailyReportMdUrl = ref('')
 const selectedReport = ref<EventReport | null>(null)
 const reportError = ref('')
 const stageRef = ref<HTMLElement | null>(null)
+const stageImgRef = ref<HTMLImageElement | null>(null)
 const stageSize = ref({ width: 0, height: 0 })
+const imgNaturalSize = ref({ width: 0, height: 0 })
 let timer: number | null = null
 let stageResizeObserver: ResizeObserver | null = null
+
+function onImgLoad(event: Event): void {
+  const img = event.target as HTMLImageElement
+  imgNaturalSize.value = { width: img.naturalWidth, height: img.naturalHeight }
+}
 
 async function loadState(): Promise<void> {
   try {
@@ -58,8 +68,18 @@ async function submitChat(): Promise<void> {
       device_id: deviceId.value,
       context: { source: 'web-console' },
     })
+    await loadChatHistory()
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc)
+  }
+}
+
+async function loadChatHistory(): Promise<void> {
+  try {
+    chatHistory.value = await fetchChatHistory()
+    chatHistoryLoaded.value = true
+  } catch {
+    chatHistoryLoaded.value = false
   }
 }
 
@@ -141,6 +161,7 @@ function observeStageSize(): void {
 onMounted(async () => {
   observeStageSize()
   await loadState()
+  await loadChatHistory()
   timer = window.setInterval(loadState, 1500)
 })
 
@@ -171,9 +192,18 @@ const analysisByEvent = computed(() => {
   for (const item of analysisResults.value) map.set(item.event_id, item)
   return map
 })
+const _sourceSize = computed(() => {
+  const iw = imgNaturalSize.value.width
+  const ih = imgNaturalSize.value.height
+  const fw = latestDetection.value?.frame_width
+  const fh = latestDetection.value?.frame_height
+  if (iw > 0 && ih > 0) return { width: iw, height: ih }
+  if (fw && fh && fw > 0 && fh > 0) return { width: fw, height: fh }
+  return { width: 640, height: 360 }
+})
+
 const mediaOverlayStyle = computed<Record<string, string>>(() => {
-  const sourceWidth = latestDetection.value?.frame_width || 640
-  const sourceHeight = latestDetection.value?.frame_height || 360
+  const { width: sourceWidth, height: sourceHeight } = _sourceSize.value
   const containerWidth = stageSize.value.width
   const containerHeight = stageSize.value.height
   if (sourceWidth <= 0 || sourceHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) {
@@ -191,8 +221,7 @@ const mediaOverlayStyle = computed<Record<string, string>>(() => {
 })
 
 function boxStyle(item: DetectionResult['detections'][number]): Record<string, string> {
-  const width = latestDetection.value?.frame_width || 640
-  const height = latestDetection.value?.frame_height || 360
+  const { width, height } = _sourceSize.value
   return {
     left: `${Math.min((item.box.x1 / width) * 100, 96)}%`,
     top: `${Math.min((item.box.y1 / height) * 100, 92)}%`,
@@ -207,8 +236,7 @@ interface PoseOverlay {
 }
 
 function poseOverlay(item: Detection): PoseOverlay {
-  const width = latestDetection.value?.frame_width || 640
-  const height = latestDetection.value?.frame_height || 360
+  const { width, height } = _sourceSize.value
   const keypoints = item.keypoints ?? []
   const points = keypoints.map((kpt, index) => normalizeKeypoint(index, kpt, width, height))
   const edges: SkeletonEdge[] = []
@@ -300,10 +328,12 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
       <div class="viewport">
         <div ref="stageRef" class="frame-wrap">
           <img
+            ref="stageImgRef"
             v-if="latestDetection?.image_jpeg_base64"
             class="frame-image"
             :src="`data:image/jpeg;base64,${latestDetection.image_jpeg_base64}`"
             alt="edge camera frame"
+            @load="onImgLoad"
           />
           <div v-else class="frame-placeholder">
             <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -637,12 +667,23 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
           </div>
           <div v-if="chatResult" class="result-block">
             <div class="result-tag">智能体回复</div>
-            <div class="result-body">{{ chatResult.answer }}</div>
+            <div class="result-body md-content" v-html="renderMarkdown(chatResult.answer)"></div>
             <ul v-if="chatResult.traces?.length" class="trace-list">
               <li v-for="trace in chatResult.traces" :key="trace">{{ trace }}</li>
             </ul>
           </div>
           <div v-else class="empty-state">智能体回复会显示在这里</div>
+
+          <div v-if="chatHistory.length" class="result-block">
+            <div class="result-tag">对话历史</div>
+            <div class="chat-history-list">
+              <div v-for="item in chatHistory" :key="item.id" class="chat-history-item">
+                <div class="chat-question">Q: {{ item.question }}</div>
+                <div class="chat-answer md-content" v-html="renderMarkdown(item.answer)"></div>
+                <div class="event-meta">{{ item.device_id }} · {{ formatTime(item.created_at) }}</div>
+              </div>
+            </div>
+          </div>
 
           <div v-if="scheduleResult" class="result-block">
             <div class="result-tag">调度决策</div>
