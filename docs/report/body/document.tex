@@ -1,0 +1,486 @@
+\pagenumbering{arabic}
+
+% ==================== 第一章 需求分析 ====================
+\section{需求分析}
+
+\subsection{系统目标}
+
+本项目旨在构建一套面向机房/实验室场景的端-边-云协同安全监测系统。系统围绕"边端实时感知、云端复杂分析、管理平台可视化"三个核心层次，实现人员检测、姿态识别、安全事件分析、场所合理性检查、自然语言日志查询与隐患扫描的完整业务闭环。
+
+\subsection{功能需求}
+
+系统功能需求分为五个层次，如下表所示：
+
+\begin{table}[H]
+\caption{系统功能需求总览}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+编号 & 功能 & 说明 \\
+\midrule
+F1  & 摄像头采集       & 实时视频流采集，支持分辨率和帧率配置 \\
+F2  & YOLO-Pose检测    & 人体检测框与17点关键点识别，ONNX/OpenVINO双后端 \\
+F3  & 姿态分类         & 站立/坐下/举手/蹲下/头部偏转/上身偏转共9种姿态 \\
+F4  & WebRTC视频流     & 低延迟实时视频推送到前端 \\
+F5  & 安全事件检测     & 低头/摔倒/聚集/姿态不确定等6类事件自动识别 \\
+F6  & 合理性检查       & 基于时段规则和容量规则的合规性事件生成 \\
+F7  & 云端Agent分析    & 大模型+知识库+联网搜索的综合分析 \\
+F8  & 事件持久化       & PostgreSQL存储事件和分析结果，支持全文检索 \\
+F9  & 报告生成         & 事件报告与日报生成，支持Markdown/HTML/PDF \\
+F10 & 日志查询         & 自然语言查询历史事件，5类隐患自动扫描 \\
+F11 & 知识库管理       & 向量化语义检索(RAG) + 在线编辑 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:func}
+\end{table}
+
+\subsection{非功能需求}
+
+\begin{itemize}
+\item \textbf{实时性}: 边端跳帧策略(每3帧推理1次)，WebRTC低延迟视频推送(24fps)
+\item \textbf{断网可用}: 边端离线时本地检测和事件分析正常运作，恢复后队列同步
+\item \textbf{可扩展性}: LLM/搜索/知识库通过抽象层接入，支持mock/real切换
+\item \textbf{安全性}: API Key通过\verb|.env|注入，不提交仓库
+\item \textbf{可部署性}: Docker Compose一键启动全部6个服务
+\end{itemize}
+
+% ==================== 第二章 系统架构设计 ====================
+\section{系统架构设计}
+
+\subsection{总体架构}
+
+系统采用端-边-云三层协同架构：边端负责摄像头采集和YOLO-Pose实时推理，生成检测结果和事件；云端接收边端上报的数据，调用大模型、知识库和搜索工具进行深度分析；管理平台提供双前端界面，分别面向边端实时监控和云端管理分析。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.2cm, auto,
+  block/.style={rectangle, draw, minimum width=8cm, minimum height=1cm, align=center, rounded corners}]
+  \node [block] (frontend) {管理平台 (Vue3)\\\small 边端工作台 :5174 \quad 云端控制台 :5173};
+  \node [block, below=0.8cm of frontend] (edge) {边端 API :8001 (FastAPI)\\\small 摄像头采集 | YOLO-Pose | 事件分析 | WebRTC};
+  \node [block, below=0.8cm of edge] (cloud) {云端 API :8000 (FastAPI)\\\small CloudAgent | LLM | 知识库RAG | 搜索};
+  \node [block, below=0.8cm of cloud] (db) {PostgreSQL :5433\\\small pgvector | 事件持久化 | 知识库向量};
+  \draw [<->, thick] (frontend.south) -- (edge.north) node [midway, right] {\small WebRTC/WS};
+  \draw [<->, thick] (frontend.south) -- (cloud.north) node [midway, left] {\small HTTP/WS};
+  \draw [<->, thick] (edge.south) -- (cloud.north) node [midway, right] {\small HTTP POST};
+  \draw [<->, thick] (cloud.south) -- (db.north);
+\end{tikzpicture}
+\caption{系统总体架构图}
+\label{fig:arch}
+\end{figure}
+
+\subsection{数据流设计}
+
+系统数据流如下：
+
+\begin{enumerate}
+\item \textbf{视频流}: 摄像头 $\rightarrow$ resize(960px) $\rightarrow$ WebRTC $\rightarrow$ 前端播放
+\item \textbf{检测流}: 原始帧 $\rightarrow$ YOLO-Pose推理 $\rightarrow$ DetectionResult(含框/关键点/姿态)
+\item \textbf{事件流}: DetectionResult $\rightarrow$ EdgeEventAnalyzer $\rightarrow$ SafetyEvent(10类)
+\item \textbf{同步流}: EdgeCycle $\rightarrow$ CloudClient $\rightarrow$ 云端HTTP API $\rightarrow$ RuntimeState/PostgreSQL
+\item \textbf{分析流}: CloudAgent $\rightarrow$ LLM+知识库(RAG)+搜索(Tavily) $\rightarrow$ CloudAnalysisResponse
+\end{enumerate}
+
+\subsection{技术选型}
+
+\begin{table}[H]
+\caption{技术选型说明}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+层次 & 技术 & 选择理由 \\
+\midrule
+边端推理   & OpenVINO/ONNX Runtime  & 本地高效推理，无需GPU \\
+边端API    & FastAPI + Uvicorn      & 异步高性能Web框架 \\
+云端API    & FastAPI + Uvicorn      & 统一技术栈 \\
+实时视频   & WebRTC (aiortc)        & 低延迟视频流 \\
+状态推送   & WebSocket              & 全双工实时更新 \\
+大模型     & 阿里百炼 qwen3-vl-flash & 兼容OpenAI接口，支持视觉输入 \\
+向量检索   & pgvector + text-embedding-v3 & 1024维语义相似度检索 \\
+联网搜索   & Tavily Search API      & 实时网页搜索 \\
+数据库     & PostgreSQL 16          & 成熟的关系型数据库 \\
+前端       & Vue3 + Vite + TypeScript & 现代响应式框架 \\
+测试       & pytest                 & Python标准测试框架 \\
+容器化     & Docker Compose         & 6服务一键部署 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:tech}
+\end{table}
+
+% ==================== 第三章 模块详细设计 ====================
+\section{模块详细设计}
+
+\subsection{共享层 (backend/shared/)}
+
+共享层定义了边端、云端和管理平台之间的统一数据契约，包含三个核心组件：
+
+\textbf{数据模型 (domain/models.py)}: 定义了14个Pydantic模型，覆盖检测(BoundingBox, Keypoint, Detection, DetectionResult)、姿态(PoseAnalysis)、事件(SafetyEvent, CloudAnalysisRequest/Response)、调度(TaskRequest, ScheduleDecision, TaskLog)和对话(AgentRequest/Response)等全部领域对象。
+
+\textbf{运行时状态 (core/state.py)}: 线程安全的内存存储，使用\verb|deque(maxlen=200)|和\verb|threading.Lock|实现。存储边端状态、最近50条检测结果、200条事件、200条分析结果和200条任务日志。所有写入操作具有幂等性。
+
+\textbf{配置管理 (core/config.py)}: 基于\verb|pydantic-settings|从\verb|.env|文件读取全部配置项，涵盖服务地址、数据库、摄像头、YOLO参数、LLM提供商、知识库、场所规则和冷却策略。
+
+\subsection{边端模块 (backend/edge\_api/)}
+
+边端模块负责"采集—推理—调度—上报"的实时闭环。
+
+\textbf{摄像头采集 (runtime/camera.py)}: \verb|CameraSource|上下文管理器封装\verb|cv2.VideoCapture|，支持配置索引和分辨率。提供\verb|read()|和\verb|read\_latest()|方法，以及\verb|encode\_frame\_to\_jpeg\_base64()|编码工具。
+
+\textbf{YOLO检测 (runtime/detector.py)}: \verb|YoloDetector|支持ONNX Runtime和OpenVINO双后端。自动解析模型元数据(task/class\_names/keypoint\_names)，处理标准YOLO输出和NMS后处理输出两种格式。
+
+\textbf{姿态分析 (runtime/pose.py)}: \verb|PoseAnalyzer|基于COCO 17关键点的规则化姿态分类器。根据人体关键点几何关系判断9种姿态动作（站立、坐下、举手、蹲下、头部左偏/右偏/低头、上身左倾/右倾），低置信度或关键点稀疏时标记\verb|needs\_cloud|转云端复核。
+
+\textbf{事件分析 (runtime/events.py)}: \verb|EdgeEventAnalyzer|是边端安全监测的核心，维护短期状态（低头持续时间、聚集持续时间、人群数量变化），实时识别10类事件：
+
+\begin{table}[H]
+\caption{边端安全事件类型}
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+事件类型            & 严重程度 & 云端状态 \\
+\midrule
+person\_count       & INFO    & EDGE\_RESOLVED \\
+pose\_*(6种)        & INFO/WARNING & EDGE\_RESOLVED \\
+long\_head\_down     & WARNING & CLOUD\_PENDING \\
+fall\_suspected      & CRITICAL & CLOUD\_PENDING \\
+crowding            & WARNING & CLOUD\_PENDING \\
+pose\_uncertain      & WARNING & CLOUD\_PENDING \\
+unauthorized\_time   & WARNING & CLOUD\_PENDING \\
+excessive\_people    & WARNING & CLOUD\_PENDING \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:events}
+\end{table}
+
+合理性事件(unauthorized\_time, excessive\_people)使用独立30秒冷却周期，避免频繁触发。
+
+\textbf{编排流水线 (runtime/pipeline.py)}: \verb|EdgePipeline|串联姿态分析$\rightarrow$事件分析$\rightarrow$调度决策$\rightarrow$云端同步的完整流程。云端分析请求设有3秒冷却机制，避免高频调用大模型。
+
+\textbf{云端同步 (runtime/collector.py)}: \verb|EdgeCollector|在独立守护线程中运行，负责摄像头帧采集、YOLO检测调度、WebRTC视频推送、WebSocket状态广播和云端同步。云端同步采用独立daemon线程+队列机制，确保不阻塞检测主循环。
+
+\subsection{云端模块 (backend/cloud\_api/)}
+
+云端模块负责"复杂理解—工具调用—结果生成"的智能决策闭环。
+
+\textbf{智能体 (cloud/agent.py)}: \verb|CloudAgent|是云端分析的核心编排器，集成LLM、搜索、知识库和日志查询四个工具，提供对话(answer)、事件分析(analyze\_event)和隐患扫描(scan)三种核心能力。对话时自动识别用户意图，日志相关查询时自动注入历史事件上下文。
+
+\textbf{大模型客户端 (cloud/llm.py)}: \verb|LLMClient|支持mock、openai和openai-compatible三种模式。视觉模型通过content数组传递base64编码的图像数据。
+
+\textbf{向量知识库 (cloud/vector\_knowledge.py)}: \verb|VectorKnowledgeBase|实现RAG(检索增强生成)能力。文档按段落分块(500字/段)，调用百炼Embedding API生成1024维向量，存储于pgvector，检索时使用余弦相似度排序。向量检索不可用时自动降级为关键词匹配。
+
+\textbf{联网搜索 (cloud/search.py)}: \verb|SearchTool|支持local(离线)、tavily(联网)和http-json(通用)三种搜索提供商。Tavily模式调用\verb|POST https://api.tavily.com/search|，返回标题、摘要、URL和AI回答。
+
+\textbf{日志查询 (cloud/log\_query.py)}: \verb|LogQueryTool|提供按时间/类型/等级过滤的历史事件查询、汇总统计和5类隐患自动扫描（未处理高风险、重复非授权进入、频繁聚集、疑似摔倒、反复超容量）。
+
+\textbf{数据库 (cloud/schema.py, event\_repository.py)}: \verb|initialize\_database()|在云端启动时自动创建数据库和表结构。\verb|CloudEventRepository|封装PostgreSQL CRUD操作。支持启动时从数据库恢复历史数据到运行时状态。
+
+\subsection{前端模块}
+
+系统包含两个独立前端应用：
+
+\textbf{边端工作台 (edge\_frontend/)}: 基于Vue3+TypeScript+Vite，通过WebRTC获取实时视频流，WebSocket接收检测/事件/状态推送。页面展示实时视频(YOLO检测框+关键点+姿态骨架叠加)、实时指标(检测数/推理耗时/姿态/事件数)、合理性检查状态(时段合规/容量合规)、事件列表和云端分析摘要。
+
+\textbf{云端控制台 (cloud\_frontend/)}: 同样基于Vue3+TypeScript+Vite，通过WebRTC连接边端获取视频流，HTTP轮询获取云端数据。包含5个页面：监控(WebRTC视频+检测表+事件卡片)、事件(统计+列表+分析卡片+日报)、智能体(对话+来源标识+MD/PDF导出)、日志(任务列表)、知识库(文件列表+在线编辑器)。
+
+% ==================== 第四章 接口设计 ====================
+\section{接口设计}
+
+\subsection{REST API}
+
+\begin{table}[H]
+\caption{云端API接口列表}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+方法   & 路径                          & 说明 \\
+\midrule
+GET    & /health                       & 健康检查 \\
+GET    & /api/state                    & 运行时状态快照 \\
+POST   & /api/edge/status              & 接收边端状态 \\
+POST   & /api/edge/detections          & 接收检测结果 \\
+POST   & /api/events                   & 接收事件 \\
+GET    & /api/events                   & 事件列表 \\
+GET    & /api/events/search            & 事件搜索 \\
+POST   & /api/events/analyze           & 事件分析 \\
+GET    & /api/events/\{id\}/report       & 事件报告 \\
+POST   & /api/agent/chat               & 智能体对话 \\
+GET    & /api/agent/scan               & 隐患扫描 \\
+GET    & /api/reports/daily            & 日报生成 \\
+GET    & /api/knowledge                & 知识库文件列表 \\
+GET    & /api/knowledge/\{name\}         & 读取知识文件 \\
+PUT    & /api/knowledge/\{name\}         & 更新知识文件 \\
+POST   & /api/webrtc/offer             & WebRTC信令 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:api}
+\end{table}
+
+\subsection{WebSocket消息格式}
+
+\begin{lstlisting}[language={}]
+{ "type": "detection",  "data": DetectionResult }
+{ "type": "task_log",   "data": TaskLog }
+{ "type": "event",      "data": SafetyEvent }
+{ "type": "analysis_result", "data": CloudAnalysisResponse }
+{ "type": "status",     "data": EdgeStatus }
+\end{lstlisting}
+
+\subsection{核心数据模型}
+
+\begin{lstlisting}[language=Python]
+class DetectionResult(BaseModel):
+    device_id: str; frame_id: str; backend: str
+    model_task: str; inference_ms: float; fps: float
+    frame_width: int; frame_height: int
+    image_jpeg_base64: str | None
+    detections: list[Detection]; pose: PoseAnalysis | None
+
+class SafetyEvent(BaseModel):
+    event_id: str; event_type: str; device_id: str
+    severity: EventSeverity  # info/warning/critical
+    status: EventStatus      # edge_resolved/cloud_pending/cloud_analyzed
+    summary: str; evidence: list[str]; metrics: dict
+
+class CloudAnalysisResponse(BaseModel):
+    event_id: str; risk_level: EventSeverity
+    conclusion: str; reasoning: list[str]
+    suggestions: list[str]; report: str
+    used_search: bool; used_knowledge: bool
+    traces: list[str]
+\end{lstlisting}
+
+% ==================== 第五章 数据库设计 ====================
+\section{数据库设计}
+
+\subsection{表结构}
+
+系统使用PostgreSQL 16作为持久化存储，启用pgvector扩展支持向量检索。
+
+\begin{table}[H]
+\caption{cloud\_events表结构}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+字段        & 类型          & 说明 \\
+\midrule
+event\_id   & TEXT PRIMARY KEY & 事件唯一ID \\
+event\_type & TEXT NOT NULL   & 事件类型 \\
+device\_id  & TEXT NOT NULL   & 设备ID \\
+severity    & TEXT NOT NULL   & 严重程度 \\
+status      & TEXT NOT NULL   & 处理状态 \\
+summary     & TEXT NOT NULL   & 事件摘要 \\
+evidence    & JSONB           & 证据列表 \\
+metrics     & JSONB           & 指标字典 \\
+payload     & JSONB NOT NULL  & 完整JSON \\
+search\_text & TEXT            & 检索文本 \\
+created\_at & TIMESTAMPTZ     & 创建时间 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:db1}
+\end{table}
+
+\begin{table}[H]
+\caption{knowledge\_chunks表结构（向量知识库）}
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+字段        & 类型            & 说明 \\
+\midrule
+id          & SERIAL PRIMARY KEY & 自增主键 \\
+doc\_name   & TEXT NOT NULL     & 文档名称 \\
+chunk\_index & INTEGER NOT NULL  & 分块序号 \\
+content     & TEXT NOT NULL     & 分块内容 \\
+embedding   & vector(1024)     & 1024维向量 \\
+created\_at & TIMESTAMPTZ       & 创建时间 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:db2}
+\end{table}
+
+\subsection{ER图}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.5cm, auto,
+  table/.style={rectangle, draw, minimum width=5cm, minimum height=3.5cm, align=left}]
+  \node [table] (events) {
+    \textbf{cloud\_events}\\
+    \hline
+    event\_id (PK)\\
+    event\_type\\
+    device\_id\\
+    severity\\
+    status\\
+    summary\\
+    evidence (JSONB)\\
+    metrics (JSONB)\\
+    created\_at
+  };
+  \node [table, right=1.5cm of events] (analysis) {
+    \textbf{cloud\_analysis\_results}\\
+    \hline
+    event\_id (PK, FK)\\
+    risk\_level\\
+    conclusion\\
+    reasoning (JSONB)\\
+    suggestions (JSONB)\\
+    report\\
+    used\_search\\
+    used\_knowledge\\
+    created\_at
+  };
+  \node [table, below=1cm of events] (chunks) {
+    \textbf{knowledge\_chunks}\\
+    \hline
+    id (PK)\\
+    doc\_name\\
+    chunk\_index\\
+    content\\
+    embedding (vector)\\
+    created\_at
+  };
+  \node [table, right=1.5cm of chunks] (chat) {
+    \textbf{cloud\_chat\_history}\\
+    \hline
+    id (PK)\\
+    question\\
+    answer\\
+    device\_id\\
+    context\_json (JSONB)\\
+    traces (JSONB)\\
+    created\_at
+  };
+  \draw [->] (events.east) -- node[above] {1:1} (analysis.west);
+\end{tikzpicture}
+\caption{数据库ER图}
+\label{fig:er}
+\end{figure}
+
+% ==================== 第六章 部署方案 ====================
+\section{部署方案}
+
+\subsection{Docker Compose}
+
+系统通过Docker Compose编排6个服务：
+
+\begin{table}[H]
+\caption{Docker服务清单}
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+服务        & 端口  & 说明 \\
+\midrule
+postgres    & 5433  & PostgreSQL 16 + pgvector \\
+cloud       & 8000  & 云端FastAPI服务 \\
+edge        & 8001  & 边端FastAPI服务 \\
+cloud-web   & 8080  & 云端控制台Nginx \\
+edge-web    & 8081  & 边端工作台Nginx \\
+edge-runner & --    & 摄像头采集(可选,profile:edge) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:docker}
+\end{table}
+
+\subsection{本地开发}
+
+\begin{lstlisting}[language=bash]
+pip install -e ".[yolo,test]"
+cloud-api  # 云端 :8000
+edge-api   # 边端 :8001 (自动打开摄像头)
+cd src/frontend/cloud_frontend && npm install && npm run dev  # :5173
+cd src/frontend/edge_frontend && npm install && npm run dev   # :5174
+\end{lstlisting}
+
+\subsection{关键配置}
+
+\begin{lstlisting}[language=bash]
+# 大模型
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3-vl-flash
+# 联网搜索
+SEARCH_PROVIDER=tavily
+# 向量知识库
+POSTGRES_VECTOR_ENABLED=true
+EMBEDDING_MODEL=text-embedding-v3
+# 场所规则
+ROOM_ALLOWED_HOURS_START=08:00
+ROOM_ALLOWED_HOURS_END=22:00
+ROOM_CAPACITY=15
+\end{lstlisting}
+
+% ==================== 第七章 测试 ====================
+\section{测试}
+
+\subsection{测试覆盖}
+
+项目采用pytest框架，共编写54个测试用例，覆盖所有核心模块：
+
+\begin{table}[H]
+\caption{测试覆盖情况}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+测试文件                       & 用例数 & 覆盖内容 \\
+\midrule
+test\_agent.py                 & 11 & Agent对话/事件分析/日志查询/隐患扫描/降级处理 \\
+test\_cloud\_events.py          & 4  & 事件CRUD/持久化/容错/报告导出 \\
+test\_detector.py               & 4  & ONNX输出解析/OpenVINO加载/元数据解析 \\
+test\_edge\_events.py           & 11 & 6类安全事件+3类合理性事件+冷却机制 \\
+test\_edge\_pipeline.py         & 4  & 流水线处理/云端同步/离线处理/失败降级 \\
+test\_events\_state.py          & 6  & RuntimeState读写/幂等/合并 \\
+test\_pose.py                   & 4  & 举手/头部方向/上身方向/稀疏关键点 \\
+test\_reports.py                & 4  & 日报JSON/MD/日期校验 \\
+test\_scheduler.py              & 2  & 简单/复杂任务分流 \\
+其它                           & 4  & 采集器同步/生命周期/WebRTC帧 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:test}
+\end{table}
+
+全部54个测试用例100\%通过，使用\verb|LLM\_PROVIDER=mock|避免在测试中触发付费API调用。
+
+\subsection{集成测试}
+
+\verb|scripts/demo\_test.py|提供端到端集成验证，覆盖单元测试、编译检查、环境配置、知识库检索、日志查询、云端API、Agent API和Docker配置共8项检查。
+
+% ==================== 第八章 总结与展望 ====================
+\section{总结与展望}
+
+\subsection{项目成果}
+
+本项目成功构建了一套完整的端-边-云协同安全监测系统，主要成果包括：
+
+\begin{enumerate}
+\item \textbf{完整的端-边-云协同架构}: 边端实时感知(摄像头+YOLO-Pose+事件分析)，云端智能分析(LLM+RAG+搜索)，管理平台可视化(双前端5页面)
+\item \textbf{12类安全事件检测}: 涵盖姿态(6类)、安全(4类)、合理性(2类)三大维度，支持本地告警和云端深度分析
+\item \textbf{多模态智能分析}: 集成百炼qwen3-vl-flash(视觉理解)、pgvector(向量语义检索)、Tavily(联网搜索)
+\item \textbf{完善的数据管理}: PostgreSQL持久化+历史恢复+全文检索+Markdown/HTML日报
+\item \textbf{50+自动化测试}: 单元测试全覆盖，集成测试脚本支持一键验证
+\end{enumerate}
+
+\subsection{创新点}
+
+\begin{itemize}
+\item \textbf{知识库驱动的合理性分析}: 将场所规则编码为结构化知识库，边端实时判断时段和容量合规性
+\item \textbf{基于pgvector的RAG检索}: 调用百炼Embedding API生成1024维向量，实现知识库语义检索
+\item \textbf{自然语言日志分析}: 管理员可对话式查询历史事件、自动扫描隐患、生成趋势报告
+\item \textbf{视觉+文本多模态Agent}: 摄像头画面以base64传递给大模型，实现端到端视觉理解
+\end{itemize}
+
+\subsection{展望}
+
+\begin{itemize}
+\item 接入人脸识别模型，实现人员身份确认
+\item 引入行为链分析，识别"进入$\rightarrow$坐下$\rightarrow$操作设备"等复杂行为模式
+\item 集成邮件/短信/钉钉等通知渠道，实现自动告警
+\item 引入ECharts图表，展示事件趋势和统计可视化
+\item 支持多边端设备统一接入和分布式管理
+\end{itemize}

@@ -1,0 +1,12 @@
+*.bib
+*.bst
+*.sty
+*.aux
+*.log
+*.pdf
+*.gz
+*.synctex
+*.toc
+*.eps
+*.png
+*.out

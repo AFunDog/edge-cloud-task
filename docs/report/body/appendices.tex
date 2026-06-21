@@ -1,0 +1,59 @@
+\newpage
+\appendix
+
+\section{致谢}
+
+在本课程设计的完成过程中，得到了指导教师的悉心指导和同学们的热情帮助。感谢任课教师在计算机系统综合实践课程中的系统讲授，使我掌握了端-边-云协同架构的设计方法和实现技术。感谢阿里云百炼提供的qwen3-vl-flash视觉语言模型和text-embedding-v3嵌入模型，Tavily提供的Search API，以及YOLO-Pose开源模型和OpenVINO推理框架，为本系统的实现提供了有力的技术支持。
+
+\section{系统演示场景}
+
+\begin{enumerate}
+\item 启动系统（Docker Compose或本地启动）
+\item 摄像头前依次展示正常姿态、低头、多人进入等场景
+\item 边端工作台实时显示检测框、关键点骨架和事件告警
+\item 云端控制台同步显示事件列表、风险等级和Agent分析结果
+\item 展示合理性分析：非开放时段检测触发unauthorized\_time事件
+\item 管理员输入"分析今天的异常事件"，Agent输出汇总报告
+\item 查看每日检测报告，导出Markdown日报
+\end{enumerate}
+
+\section{项目源码结构}
+
+\begin{lstlisting}[language=bash]
+src/backend/
+  shared/           # 共享层 (models/config/state/scheduler)
+  cloud_api/        # 云端服务 (routes/cloud)
+  edge_api/         # 边端服务 (routes/runtime)
+src/frontend/
+  cloud_frontend/   # 云端控制台 (Vue3, 5页面)
+  edge_frontend/    # 边端工作台 (Vue3, WebRTC)
+tests/              # 54个测试用例
+docs/               # 设计文档
+data/knowledge/     # 知识库文件(3份)
+scripts/            # 集成测试/模型下载
+docker-compose.yml  # 6服务编排
+\end{lstlisting}
+
+\section{环境依赖}
+
+\begin{table}[H]
+\caption{核心依赖版本}
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+依赖 & 版本 \\
+\midrule
+Python     & >= 3.10 \\
+FastAPI    & >= 0.111 \\
+OpenCV     & >= 4.9 \\
+ONNX Runtime & >= 1.18 \\
+OpenVINO   & >= 2024.0 \\
+PostgreSQL & 16 + pgvector \\
+Vue3       & 3.5 \\
+TypeScript & 5.8 \\
+Vite       & 5.4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\label{tb:deps}
+\end{table}
