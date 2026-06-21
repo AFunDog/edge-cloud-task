@@ -45,6 +45,7 @@ def main() -> None:
         cloud_sync_enabled=settings.edge_cloud_sync_enabled and not args.no_cloud_sync and not args.offline,
         cloud_agent_enabled=settings.edge_cloud_agent_enabled and not args.no_cloud_agent,
         cloud_agent_cooldown_seconds=settings.edge_cloud_agent_cooldown_seconds,
+        cloud_analysis_cooldown_seconds=settings.edge_cloud_analysis_cooldown_seconds,
     )
     interval = settings.edge_loop_interval_seconds if args.interval is None else args.interval
     skip_frames = max(1, settings.edge_skip_frames if args.skip_frames is None else args.skip_frames)

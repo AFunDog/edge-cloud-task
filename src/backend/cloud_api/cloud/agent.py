@@ -51,8 +51,9 @@ class CloudAgent:
             search_hits = []
             traces.append(f"search_error={exc}")
         prompt = self._build_event_prompt(request, knowledge_hits, search_hits)
+        images = [request.image_jpeg_base64] if request.image_jpeg_base64 else None
         try:
-            llm_report = self.llm.generate(prompt)
+            llm_report = self.llm.generate(prompt, images=images)
         except Exception as exc:
             llm_report = "云端大模型暂不可用，已使用规则分析生成降级报告。"
             traces.append(f"llm_error={exc}")

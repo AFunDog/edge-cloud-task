@@ -34,6 +34,7 @@ class EdgeCollector:
             cloud_sync_enabled=settings.edge_cloud_sync_enabled,
             cloud_agent_enabled=settings.edge_cloud_agent_enabled,
             cloud_agent_cooldown_seconds=settings.edge_cloud_agent_cooldown_seconds,
+            cloud_analysis_cooldown_seconds=settings.edge_cloud_analysis_cooldown_seconds,
         )
         self._detection_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-detection")
         self._cloud_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-cloud-sync")

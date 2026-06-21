@@ -47,6 +47,7 @@ class EdgePipeline:
         cloud_sync_enabled: bool = True,
         cloud_agent_enabled: bool = True,
         cloud_agent_cooldown_seconds: float = 10.0,
+        cloud_analysis_cooldown_seconds: float = 3.0,
         scheduler: TaskScheduler | None = None,
         pose_analyzer: PoseAnalyzer | None = None,
         event_analyzer: EdgeEventAnalyzer | None = None,
@@ -56,12 +57,14 @@ class EdgePipeline:
         self.cloud_sync_enabled = cloud_sync_enabled
         self.cloud_agent_enabled = cloud_agent_enabled
         self.cloud_agent_cooldown_seconds = max(0.0, cloud_agent_cooldown_seconds)
+        self.cloud_analysis_cooldown_seconds = max(0.0, cloud_analysis_cooldown_seconds)
         self.scheduler = scheduler or TaskScheduler()
         self.pose_analyzer = pose_analyzer or PoseAnalyzer()
         self.event_analyzer = event_analyzer or EdgeEventAnalyzer()
         self._cloud_available = False
         self._cloud_checked_at = float("-inf")
         self._last_agent_call_at = float("-inf")
+        self._last_analysis_at = float("-inf")
 
     def process(self, detection: DetectionResult) -> EdgeCycle:
         self._analyze_pose(detection)
@@ -129,7 +132,7 @@ class EdgePipeline:
 
         pending_events = [event for event in cycle.events if event.status == EventStatus.CLOUD_PENDING]
         analysis_ok = True
-        if pending_events and self.cloud_agent_enabled:
+        if pending_events and self.cloud_agent_enabled and self._analysis_due():
             cycle.cloud_analysis_results = []
             for event in pending_events:
                 try:
@@ -152,6 +155,7 @@ class EdgePipeline:
                     cloud_log.result_summary = response.conclusion
                     cycle.agent_called = True
                     self._last_agent_call_at = time.monotonic()
+                    self._last_analysis_at = time.monotonic()
                 except Exception as exc:
                     analysis_ok = False
                     cycle.cloud_error = f"云端事件分析失败：{exc}"
@@ -190,6 +194,9 @@ class EdgePipeline:
             self._cloud_available = self.cloud_client.is_available()
             self._cloud_checked_at = now
         return self._cloud_available
+
+    def _analysis_due(self) -> bool:
+        return time.monotonic() - self._last_analysis_at >= self.cloud_analysis_cooldown_seconds
 
     def _agent_call_due(self) -> bool:
         return time.monotonic() - self._last_agent_call_at >= self.cloud_agent_cooldown_seconds
