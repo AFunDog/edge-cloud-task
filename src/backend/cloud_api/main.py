@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.cloud_api.cloud.database import hydrate_runtime_state, initialize_database
 from backend.cloud_api.dependencies import get_event_repository
-from backend.cloud_api.routes import agent, edge, events, state, tasks
+from backend.cloud_api.routes import agent, edge, events, reports, state, tasks
 from backend.shared.core.config import get_settings
 from backend.shared.core.state import runtime_state
 
@@ -38,6 +38,7 @@ app.include_router(edge.router)
 app.include_router(events.router)
 app.include_router(tasks.router)
 app.include_router(agent.router)
+app.include_router(reports.router)
 
 
 def run() -> None:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchEventReport, fetchState, scanHazards, scheduleTask, sendAgentChat } from './api'
+import { fetchDailyReport, fetchEventReport, fetchState, getDailyReportMdUrl, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -29,6 +29,9 @@ const chatResult = ref<any>(null)
 const scheduleResult = ref<any>(null)
 const scanResult = ref<any>(null)
 const scanning = ref(false)
+const dailyReport = ref<any>(null)
+const dailyLoading = ref(false)
+const dailyReportMdUrl = ref('')
 const selectedReport = ref<EventReport | null>(null)
 const reportError = ref('')
 const stageRef = ref<HTMLElement | null>(null)
@@ -87,6 +90,19 @@ async function submitScan(): Promise<void> {
     error.value = exc instanceof Error ? exc.message : String(exc)
   } finally {
     scanning.value = false
+  }
+}
+
+async function openDailyReport(): Promise<void> {
+  try {
+    error.value = ''
+    dailyLoading.value = true
+    dailyReport.value = await fetchDailyReport()
+    dailyReportMdUrl.value = getDailyReportMdUrl()
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : String(exc)
+  } finally {
+    dailyLoading.value = false
   }
 }
 
@@ -469,6 +485,43 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
           <div class="summary-tile">
             <span>分析报告</span>
             <strong>{{ analysisResults.length }}</strong>
+          </div>
+          <div class="summary-tile">
+            <span>日报</span>
+            <button class="daily-btn" type="button" @click="openDailyReport" :disabled="dailyLoading">
+              {{ dailyLoading ? '生成中' : '查看/下载' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="dailyReport" class="daily-report-section">
+          <div class="daily-header">
+            <strong>日报 {{ dailyReport.date }}</strong>
+            <a :href="dailyReportMdUrl" target="_blank" class="download-link">下载 Markdown</a>
+          </div>
+          <div class="daily-grid">
+            <div class="daily-stat">
+              <span>事件总数</span>
+              <strong>{{ dailyReport.total }}</strong>
+            </div>
+            <div class="daily-stat critical">
+              <span>高风险</span>
+              <strong>{{ dailyReport.by_severity?.critical ?? 0 }}</strong>
+            </div>
+            <div class="daily-stat warning">
+              <span>警告</span>
+              <strong>{{ dailyReport.by_severity?.warning ?? 0 }}</strong>
+            </div>
+            <div class="daily-stat">
+              <span>待处理</span>
+              <strong>{{ dailyReport.pending_count }}</strong>
+            </div>
+          </div>
+          <div v-if="dailyReport.hazards?.length" class="daily-hazards">
+            <span>隐患</span>
+            <span v-for="h in dailyReport.hazards" :key="h.type" class="risk-chip" :class="h.severity">
+              {{ h.type }} ({{ h.count }})
+            </span>
           </div>
         </div>
 

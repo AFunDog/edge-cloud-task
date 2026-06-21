@@ -301,6 +301,7 @@
 | GET | `/api/events/search?q=&limit=` | 事件搜索 |
 | POST | `/api/events/analyze` | 事件分析 |
 | GET | `/api/events/analysis` | 分析结果列表 |
+| GET | `/api/reports/daily?d=YYYY-MM-DD&fmt=json\|md` | 日报 (JSON/Markdown) |
 | GET | `/api/events/{event_id}/report` | 事件报告 |
 | POST | `/api/tasks/schedule` | 任务调度 |
 | POST | `/api/tasks/logs` | 任务日志 |

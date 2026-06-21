@@ -48,3 +48,13 @@ export function scanHazards(hours: number = 168): Promise<{
 }> {
   return request(`/api/agent/scan?hours=${hours}`)
 }
+
+export function fetchDailyReport(dateStr: string = ''): Promise<Record<string, unknown>> {
+  const params = dateStr ? `?d=${encodeURIComponent(dateStr)}` : ''
+  return request(`/api/reports/daily${params}`)
+}
+
+export function getDailyReportMdUrl(dateStr: string = ''): string {
+  const params = dateStr ? `?d=${encodeURIComponent(dateStr)}&fmt=md` : '?fmt=md'
+  return `${API_BASE_URL}/api/reports/daily${params}`
+}

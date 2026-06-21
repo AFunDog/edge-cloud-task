@@ -139,6 +139,12 @@ def test_cloud_agent_api() -> bool:
         data = r.json()
         has_scan = "hazard_scan" in data
         ok &= check("GET /api/agent/tools", has_scan, f"tools={list(data.keys())}")
+
+        r = httpx.get(f"{CLOUD_URL}/api/reports/daily", timeout=10)
+        data = r.json()
+        has_fields = "date" in data and "total" in data and "by_severity" in data
+        ok &= check("GET /api/reports/daily", r.status_code == 200 and has_fields, f"total={data.get('total',0)}")
+
     except httpx.RequestError as exc:
         ok = False
         check("Cloud Agent API", False, str(exc))
