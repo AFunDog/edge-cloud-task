@@ -15,6 +15,7 @@
 \usepackage[toc,page]{appendix}
 \usepackage{geometry}                % 页边距调整
 \geometry{top=3.0cm,bottom=2.7cm,left=2.5cm,right=2.5cm}
+\setlength{\headheight}{12.64723pt}
 %====================公式按章编号==========================
 \numberwithin{equation}{section}
 \numberwithin{table}{section}
@@ -142,7 +143,6 @@
 \usetikzlibrary{shapes,arrows,positioning}
 %===================   正文开始    ===================
 \begin{document}
-\bibliographystyle{gbt7714-2005}     %论文引用格式
 %===================  定理类环境定义 ===================
 \newtheorem{example}{例}              % 整体编号
 \newtheorem{algorithm}{算法}
@@ -179,6 +179,7 @@
 \include{body/document}
 %============= 参考文献 =====================
 \addcontentsline{toc}{section}{参考文献}
+\bibliographystyle{gbt7714-2005}
 \bibliography{bibfile}
 \clearpage
 %=============  致谢  ======================

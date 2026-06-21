@@ -309,8 +309,8 @@ created\_at & TIMESTAMPTZ       & 创建时间 \\
 \begin{tikzpicture}[node distance=1.5cm, auto,
   table/.style={rectangle, draw, minimum width=5cm, minimum height=3.5cm, align=left}]
   \node [table] (events) {
-    \textbf{cloud\_events}\\
-    \hline
+    \textbf{cloud\_events}\\[2pt]
+    \rule{4.5cm}{0.3pt}\\
     event\_id (PK)\\
     event\_type\\
     device\_id\\
@@ -322,8 +322,8 @@ created\_at & TIMESTAMPTZ       & 创建时间 \\
     created\_at
   };
   \node [table, right=1.5cm of events] (analysis) {
-    \textbf{cloud\_analysis\_results}\\
-    \hline
+    \textbf{cloud\_analysis\_results}\\[2pt]
+    \rule{4.5cm}{0.3pt}\\
     event\_id (PK, FK)\\
     risk\_level\\
     conclusion\\
@@ -335,8 +335,8 @@ created\_at & TIMESTAMPTZ       & 创建时间 \\
     created\_at
   };
   \node [table, below=1cm of events] (chunks) {
-    \textbf{knowledge\_chunks}\\
-    \hline
+    \textbf{knowledge\_chunks}\\[2pt]
+    \rule{4.5cm}{0.3pt}\\
     id (PK)\\
     doc\_name\\
     chunk\_index\\
@@ -345,8 +345,8 @@ created\_at & TIMESTAMPTZ       & 创建时间 \\
     created\_at
   };
   \node [table, right=1.5cm of chunks] (chat) {
-    \textbf{cloud\_chat\_history}\\
-    \hline
+    \textbf{cloud\_chat\_history}\\[2pt]
+    \rule{4.5cm}{0.3pt}\\
     id (PK)\\
     question\\
     answer\\
@@ -455,6 +455,8 @@ test\_scheduler.py              & 2  & 简单/复杂任务分流 \\
 \section{总结与展望}
 
 \subsection{项目成果}
+
+本系统采用YOLO-Pose\cite{yolo-pose}进行人体姿态估计，基于FastAPI\cite{fastapi}和Pydantic\cite{pydantic}构建后端服务，使用WebRTC\cite{webrtc}实现实时视频传输，通过pgvector\cite{pgvector}实现向量检索增强生成(RAG)\cite{rag}，边端推理引擎基于OpenVINO\cite{openvino}优化，系统架构参考了边云协同计算\cite{edge-cloud-collab}的设计范式。
 
 本项目成功构建了一套完整的端-边-云协同安全监测系统，主要成果包括：
 
