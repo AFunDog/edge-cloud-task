@@ -133,8 +133,12 @@ class EdgePipeline:
         cloud_log = cycle.task_log.model_copy(deep=True)
         detection_ok = self.cloud_client.publish_detection(cycle.detection)
         event_ok = True
+        print(f"[EdgePipeline] 准备同步 {len(cycle.events)} 个事件 (pending={len([e for e in cycle.events if e.status.value == 'cloud_pending'])})")
         for event in cycle.events:
-            event_ok = self.cloud_client.publish_event(event) and event_ok
+            ok = self.cloud_client.publish_event(event)
+            event_ok = ok and event_ok
+            if not ok:
+                print(f"[EdgePipeline] 事件同步失败: {event.event_type} status={event.status.value}")
 
         pending_events = [event for event in cycle.events if event.status == EventStatus.CLOUD_PENDING]
         analysis_ok = True

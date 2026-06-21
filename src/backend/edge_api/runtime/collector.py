@@ -271,6 +271,7 @@ class EdgeCollector:
                         print(f"[EdgeCollector] 云端同步完成 frame={cycle.detection.frame_id}")
                     elif cycle.cloud_error:
                         print(f"[EdgeCollector] 云端同步失败: {cycle.cloud_error}")
+                    self._sync_pending_events()
                     for result in cycle.cloud_analysis_results or []:
                         runtime_state.add_analysis_result(result)
                         if self._loop and not self._loop.is_closed():
@@ -287,8 +288,22 @@ class EdgeCollector:
                         collect_edge_status(cycle.detection.device_id, cycle.detection.fps)
                     )
                     self.last_cloud_cycle = cycle
-                except Exception:
-                    pass
+                except Exception as exc:
+                    cycle.cloud_error = str(exc)
+                    print(f"[EdgeCollector] 云端同步异常: {exc}")
+
+    def _sync_pending_events(self) -> None:
+        """将 RuntimeState 中所有 CLOUD_PENDING 事件推送到云端。"""
+        from backend.shared.domain.models import EventStatus
+        pending = [e for e in runtime_state.snapshot()["events"] if e.status == EventStatus.CLOUD_PENDING]
+        if not pending:
+            return
+        synced = 0
+        for event in pending:
+            if self._pipeline.cloud_client.publish_event(event):
+                synced += 1
+        if synced > 0:
+            print(f"[EdgeCollector] 补推 {synced}/{len(pending)} 个待同步事件到云端")
 
     def _publish_status(self, source_fps: float) -> None:
         status = collect_edge_status(self._settings.edge_device_id, source_fps)
