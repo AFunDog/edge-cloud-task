@@ -118,9 +118,9 @@ class YoloDetector:
     def detect(self, device_id: str, frame: Any | None = None, image_jpeg_base64: str | None = None) -> DetectionResult:
         if frame is None:
             raise RuntimeError("未读取到摄像头帧，无法执行边端 YOLO 检测。")
-        start = time.perf_counter()
+        t0 = time.perf_counter()
         boxes, confidences, class_ids, keypoints_list = self.process_frame(frame)
-        elapsed = max(time.perf_counter() - start, 1e-6)
+        t1 = time.perf_counter()
         width, height = self._frame_size(frame)
         detections = [
             Detection(
@@ -131,13 +131,16 @@ class YoloDetector:
             )
             for box, confidence, class_id, keypoints in zip(boxes, confidences, class_ids, keypoints_list)
         ]
-        return DetectionResult(device_id=device_id, fps=round(1 / elapsed, 2), inference_ms=round(elapsed * 1000, 2), backend=self._backend, model_path=str(self._model_path), model_task=self._model_task, frame_width=width, frame_height=height, image_jpeg_base64=image_jpeg_base64, detections=detections)
+        return DetectionResult(device_id=device_id, fps=round(1 / max(t1 - t0, 1e-6), 2), inference_ms=round((t1 - t0) * 1000, 2), backend=self._backend, model_path=str(self._model_path), model_task=self._model_task, frame_width=width, frame_height=height, image_jpeg_base64=image_jpeg_base64, detections=detections)
 
     def process_frame(self, frame: Any) -> tuple[list[list[float]], list[float], list[int], list[list[tuple[float, float, float]]]]:
         import cv2
         orig_h, orig_w = frame.shape[:2]
+        t0 = time.perf_counter()
         img_input = self._preprocess_frame(frame)
+        t1 = time.perf_counter()
         outputs = self._run_detector(img_input)
+        t2 = time.perf_counter()
         all_boxes: list[list[float]] = []
         all_confidences: list[float] = []
         all_class_ids: list[int] = []
@@ -158,7 +161,17 @@ class YoloDetector:
             final_confidences.append(all_confidences[int(index)])
             final_class_ids.append(all_class_ids[int(index)])
             final_keypoints.append([(float(kpt_x * scale_x), float(kpt_y * scale_y), float(kpt_conf)) for kpt_x, kpt_y, kpt_conf in all_keypoints[int(index)]])
+        t3 = time.perf_counter()
+        self._log_timing(int((t1 - t0) * 1000), int((t2 - t1) * 1000), int((t3 - t2) * 1000))
         return final_boxes, final_confidences, final_class_ids, final_keypoints
+
+    _timing_counter = 0
+    def _log_timing(self, pre_ms: int, infer_ms: int, post_ms: int) -> None:
+        self._timing_counter += 1
+        if self._timing_counter % 30 == 0:
+            total = pre_ms + infer_ms + post_ms
+            print(f"[YoloDetector] 耗时分解 #{self._timing_counter}: "
+                  f"预处理={pre_ms}ms 推理={infer_ms}ms 后处理={post_ms}ms 总计={total}ms ({1000//max(total,1)}fps)")
 
     def _preprocess_frame(self, frame: Any) -> np.ndarray:
         import cv2

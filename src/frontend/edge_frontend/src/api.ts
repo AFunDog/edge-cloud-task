@@ -41,6 +41,10 @@ export function scheduleTask(payload: TaskRequest): Promise<ScheduleDecision> {
   })
 }
 
+export function switchCamera(index: number): Promise<{ ok: boolean; camera_index: number; changed: boolean }> {
+  return request(`/api/edge/camera/switch?index=${index}`, { method: 'POST' })
+}
+
 // --------------- WebSocket 实时流（检测数据、状态、日志） ---------------
 
 export type StreamMessage =

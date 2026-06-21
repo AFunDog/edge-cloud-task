@@ -31,6 +31,7 @@ class EdgeCollector:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self.enabled = settings.edge_collector_enabled
+        self._camera_index: int = settings.edge_camera_index
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -98,6 +99,25 @@ class EdgeCollector:
         self._loop = None
         self.running = False
 
+    def switch_camera(self, index: int) -> bool:
+        """切换摄像头并重启采集循环。返回 True 表示已调度切换。"""
+        if index == self._camera_index:
+            return False
+        self._camera_index = index
+        print(f"[EdgeCollector] 切换摄像头索引: {index}")
+        if self._thread and self._thread.is_alive():
+            self._stop.set()
+            if self._camera:
+                try:
+                    self._camera.release()
+                except Exception:
+                    pass
+            self._thread.join(timeout=2)
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="edge-collector", daemon=True)
+        self._thread.start()
+        return True
+
     def _run(self) -> None:
         try:
             self.running = True
@@ -138,7 +158,7 @@ class EdgeCollector:
         video_interval = 1.0 / self._settings.edge_stream_max_fps if self._settings.edge_stream_max_fps > 0 else 0.0
 
         with CameraSource(
-            self._settings.edge_camera_index,
+            self._camera_index,
             width=self._settings.edge_camera_width,
             height=self._settings.edge_camera_height,
         ) as camera:
@@ -195,6 +215,7 @@ class EdgeCollector:
             frame=frame,
             image_jpeg_base64=image,
         )
+        result.fps = round(result.fps * (self._settings.edge_skip_frames + 1), 2)
         return self._pipeline.process(result)
 
     def _on_detection_done(self, future: concurrent.futures.Future[EdgeCycle]) -> None:

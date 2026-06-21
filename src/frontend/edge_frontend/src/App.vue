@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
-import { connectStream, connectWebRTC, fetchState } from './api'
+import { connectStream, connectWebRTC, fetchState, switchCamera } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -27,6 +27,8 @@ const rtcConnected = ref(false)
 const videoWidth = ref(640)
 const videoHeight = ref(360)
 const deviceId = ref('edge-camera-01')
+const cameraIndex = ref(0)
+const cameraSwitching = ref(false)
 
 let streamControl: { close: () => void } | null = null
 let rtcControl: { close: () => void } | null = null
@@ -175,6 +177,16 @@ async function activateMonitor(): Promise<void> {
   if (!frameResizeObserver && frameRef.value) observeFrameSize()
   updateFrameSize()
   await openWebRTC()
+}
+
+async function switchEdgeCamera(idx: number): Promise<void> {
+  if (idx === cameraIndex.value) return
+  cameraSwitching.value = true
+  try {
+    const resp = await switchCamera(idx)
+    if (resp.ok) cameraIndex.value = resp.camera_index
+  } catch { /* ignore */ }
+  finally { cameraSwitching.value = false }
 }
 
 onMounted(() => {
@@ -358,6 +370,9 @@ provide('edgeStation', {
         </nav>
       </div>
       <div class="topbar-right">
+        <select class="camera-select" :value="cameraIndex" @change="switchEdgeCamera(Number(($event.target as HTMLSelectElement).value))" :disabled="cameraSwitching">
+          <option v-for="i in 4" :key="i" :value="i-1">摄像头 {{ i-1 }}</option>
+        </select>
         <div class="status-pill" :class="{ offline: !rtcConnected }">
           <span class="pulse"></span>
           {{ rtcConnected ? 'WEBRTC' : (connected ? 'WS' : 'OFFLINE') }}
