@@ -2,7 +2,7 @@
 import { inject } from 'vue'
 
 const station = inject<Record<string, any>>('cloudStation')!
-const { events, pendingEvents, criticalEvents, analysisResults, dailyReport, dailyLoading, dailyReportMdUrl, selectedReport, reportError, openDailyReport, openReport, exportReport, eventTypeLabel, severityLabel, statusLabel, analysisFor, formatTime } = station
+const { events, pendingEvents, criticalEvents, analysisResults, dailyReport, dailyLoading, dailyReportMdUrl, selectedReport, reportError, openDailyReport, openReport, exportReport, printDailyReport, eventTypeLabel, severityLabel, statusLabel, analysisFor, formatTime } = station
 </script>
 
 <template>
@@ -36,7 +36,10 @@ const { events, pendingEvents, criticalEvents, analysisResults, dailyReport, dai
         <div v-if="dailyReport" class="daily-report-section">
           <div class="daily-header">
             <strong>日报 {{ dailyReport.date }}</strong>
-            <a :href="dailyReportMdUrl" target="_blank" class="download-link">下载 Markdown</a>
+            <span style="display:flex;gap:8px">
+              <a :href="dailyReportMdUrl" target="_blank" class="download-link">下载 Markdown</a>
+              <button class="download-link" type="button" @click="printDailyReport">导出 PDF</button>
+            </span>
           </div>
           <div class="daily-grid">
             <div class="daily-stat">

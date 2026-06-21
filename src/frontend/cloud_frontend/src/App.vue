@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
-import { connectStream, connectWebRTC, fetchChatHistory, fetchDailyReport, fetchEventReport, fetchKnowledgeFile, fetchKnowledgeFiles, fetchState, getDailyReportMdUrl, saveKnowledgeFile, scanHazards, scheduleTask, sendAgentChat } from './api'
+import { connectStream, connectWebRTC, fetchChatHistory, fetchDailyReport, fetchEventReport, fetchKnowledgeFile, fetchKnowledgeFiles, fetchState, getDailyReportHtmlUrl, getDailyReportMdUrl, saveKnowledgeFile, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -189,6 +189,12 @@ async function submitKnowledgeSave(): Promise<void> {
   } finally {
     kbSaving.value = false
   }
+}
+
+function printDailyReport(): void {
+  const url = getDailyReportHtmlUrl()
+  const w = window.open(url, '_blank')
+  if (w) { w.addEventListener('load', () => setTimeout(() => w.print(), 500)) }
 }
 
 function formatFileSize(bytes: number): string {
@@ -475,7 +481,7 @@ provide('cloudStation', {
   rtcConnected, scheduleResult, scanResult, scanning, dailyReport, dailyLoading, dailyReportMdUrl, selectedReport,
   reportError, stageRef, stageSize, loadState, submitChat, loadChatHistory, submitSchedule, loadKnowledgeFiles,
   openKnowledgeFile, submitKnowledgeSave, formatFileSize, quickQuery, submitScan, openDailyReport, openReport,
-  exportReport, downloadReportMd, buildChatReportMd, printChatReport, updateStageSize, activateMonitor,
+  exportReport, downloadReportMd, buildChatReportMd, printChatReport, printDailyReport, updateStageSize, activateMonitor,
   recentDetections, edgeStatus, taskLogs, events, analysisResults,
   latestDetection, serverTime, onlineEdgeCount, pendingEvents, criticalEvents, latestEvent, latestAnalysis, analysisByEvent,
   mediaOverlayStyle, boxStyle, poseOverlay, keypointTitle, eventTypeLabel, severityLabel, statusLabel, analysisFor,
