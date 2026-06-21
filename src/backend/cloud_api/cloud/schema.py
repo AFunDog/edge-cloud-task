@@ -154,3 +154,24 @@ def _create_persistence_tables(cursor, settings: Settings) -> None:
             qualified(settings, "cloud_chat_history"),
         )
     )
+    if settings.postgres_vector_enabled:
+        cursor.execute(
+            sql.SQL(
+                """
+                CREATE TABLE IF NOT EXISTS {} (
+                    id SERIAL PRIMARY KEY,
+                    doc_name TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    embedding vector(1024),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            ).format(qualified(settings, "knowledge_chunks"))
+        )
+        cursor.execute(
+            sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (doc_name)").format(
+                sql.Identifier(f"{settings.postgres_schema}_knowledge_chunks_doc_idx"),
+                qualified(settings, "knowledge_chunks"),
+            )
+        )

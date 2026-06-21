@@ -4,10 +4,12 @@
 提供对话、事件分析和隐患扫描三种核心能力。
 """
 
-from backend.cloud_api.cloud.knowledge import KnowledgeBase
+from typing import Any
+
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.log_query import LogQueryTool
 from backend.cloud_api.cloud.search import SearchTool
+from backend.cloud_api.cloud.knowledge import KnowledgeBase  # noqa: F401
 from backend.shared.domain.models import (
     AgentRequest,
     AgentResponse,
@@ -37,7 +39,7 @@ class CloudAgent:
         self,
         llm: LLMClient,
         search_tool: SearchTool,
-        knowledge_base: KnowledgeBase,
+        knowledge_base: KnowledgeBase | Any,
         log_query: LogQueryTool | None = None,
     ) -> None:
         self.llm = llm

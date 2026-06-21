@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.cloud_api.cloud.database import hydrate_runtime_state, initialize_database
-from backend.cloud_api.dependencies import get_event_repository
+from backend.cloud_api.dependencies import get_event_repository, index_knowledge_base
 from backend.cloud_api.routes import agent, edge, events, knowledge, reports, state, tasks
 from backend.shared.core.config import get_settings
 from backend.shared.core.state import runtime_state
@@ -20,6 +20,10 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     initialize_database(settings)
     hydrate_runtime_state(runtime_state, get_event_repository(), settings.event_history_limit)
+    if settings.postgres_vector_enabled:
+        count = index_knowledge_base()
+        if count:
+            print(f"[Cloud] 知识库向量索引完成，共 {count} 个分块")
     yield
 
 

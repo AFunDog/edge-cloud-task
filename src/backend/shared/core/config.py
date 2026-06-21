@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     search_provider: str = "local"
     search_api_url: str = ""
     search_api_key: str = ""
+    embedding_model: str = "text-embedding-v3"
     knowledge_dir: Path = Path("data/knowledge")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
