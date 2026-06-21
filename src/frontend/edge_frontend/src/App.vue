@@ -355,8 +355,6 @@ provide('edgeStation', {
         </div>
         <nav class="tab-group">
           <RouterLink class="tab-btn" to="/">监控</RouterLink>
-          <RouterLink class="tab-btn" to="/pose">姿态</RouterLink>
-          <RouterLink class="tab-btn" to="/logs">日志</RouterLink>
         </nav>
       </div>
       <div class="topbar-right">
@@ -368,10 +366,6 @@ provide('edgeStation', {
       </div>
     </header>
 
-    <RouterView v-slot="{ Component }">
-      <KeepAlive include="MonitorView">
-        <component :is="Component" />
-      </KeepAlive>
-    </RouterView>
+    <RouterView />
   </div>
 </template>

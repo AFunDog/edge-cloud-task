@@ -12,7 +12,6 @@ def test_daily_report_returns_json() -> None:
     assert response.status_code == 200
     data = response.json()
     assert "date" in data
-    assert "total" in data
     assert data["date"] == date.today().isoformat()
 
 

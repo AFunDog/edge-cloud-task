@@ -167,7 +167,7 @@ input, textarea { font: inherit; color: inherit; }
 /* ─── Viewport (detection area) ─── */
 .viewport {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) 150px;
   min-height: 0;
   overflow: hidden;
   padding: 20px;
@@ -356,15 +356,16 @@ input, textarea { font: inherit; color: inherit; }
 /* ─── Bottom bar (detection table) ─── */
 .bottom-bar {
   display: block;
+  height: 150px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .det-table-wrap {
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  max-height: 176px;
-  overflow-y: auto;
   background: rgba(255,255,255,0.022);
 }
 
@@ -384,6 +385,30 @@ input, textarea { font: inherit; color: inherit; }
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+}
+
+.det-table-wrap .det-table,
+.det-table-wrap .no-data {
+  max-height: calc(100% - 35px);
+}
+
+.det-table-wrap .det-table {
+  display: block;
+  overflow-y: auto;
+}
+
+.det-table thead,
+.det-table tbody,
+.det-table tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.det-table tbody {
+  display: block;
+  max-height: 86px;
+  overflow-y: auto;
 }
 
 .det-table th {
