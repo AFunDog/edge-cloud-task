@@ -140,6 +140,7 @@ def _create_persistence_tables(cursor, settings: Settings) -> None:
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
                 device_id TEXT NOT NULL DEFAULT '',
+                context_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                 traces JSONB NOT NULL DEFAULT '[]'::jsonb,
                 used_knowledge BOOLEAN NOT NULL DEFAULT false,
                 used_search BOOLEAN NOT NULL DEFAULT false,
@@ -148,6 +149,14 @@ def _create_persistence_tables(cursor, settings: Settings) -> None:
             """
         ).format(qualified(settings, "cloud_chat_history"))
     )
+    try:
+        cursor.execute(
+            sql.SQL("ALTER TABLE {} ADD COLUMN IF NOT EXISTS context_json JSONB NOT NULL DEFAULT '{{}}'::jsonb").format(
+                qualified(settings, "cloud_chat_history")
+            )
+        )
+    except Exception:
+        pass
     cursor.execute(
         sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (created_at DESC)").format(
             sql.Identifier(f"{settings.postgres_schema}_cloud_chat_history_created_idx"),

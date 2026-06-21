@@ -6,6 +6,7 @@ GET  /api/agent/history → 对话历史
 GET  /api/agent/tools   → 可用工具列表
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -43,6 +44,7 @@ def chat(request: AgentRequest) -> AgentResponse:
         traces=response.traces,
         used_knowledge=response.used_knowledge,
         used_search=response.used_search,
+        context=json.dumps(enriched_context, default=str),
     )
     return response
 
@@ -69,7 +71,7 @@ def chat_history(
                 cur.execute(
                     sql.SQL(
                         "SELECT id, question, answer, device_id, traces, "
-                        "used_knowledge, used_search, created_at "
+                        "used_knowledge, used_search, context_json, created_at "
                         "FROM {} ORDER BY created_at DESC LIMIT %s"
                     ).format(qualified(settings, "cloud_chat_history")),
                     (limit,),
@@ -81,15 +83,27 @@ def chat_history(
                         "question": row[1],
                         "answer": row[2],
                         "device_id": row[3],
-                        "traces": json.loads(row[4]) if isinstance(row[4], str) else row[4],
+                        "traces": _parse_json(row[4]),
                         "used_knowledge": row[5],
                         "used_search": row[6],
-                        "created_at": row[7].isoformat() if row[7] else None,
+                        "context": _parse_json(row[7]) if len(row) > 8 else {},
+                        "created_at": row[8].isoformat() if len(row) > 8 and row[8] else None,
                     }
                     for row in rows
                 ]
     except Exception:
         logger.exception("Failed to load chat history")
+        return []
+
+
+def _parse_json(value: str | list | None) -> list | dict:
+    if value is None:
+        return []
+    if isinstance(value, (list, dict)):
+        return value
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
         return []
 
 
@@ -120,11 +134,11 @@ def _save_chat(
     traces: list[str],
     used_knowledge: bool,
     used_search: bool,
+    context: str = "{}",
 ) -> None:
     settings = get_settings()
     if not settings.postgres_persistence_enabled:
         return
-    import json
     try:
         from psycopg import connect, sql
         from backend.cloud_api.cloud.schema import qualified
@@ -140,16 +154,14 @@ def _save_chat(
                 cur.execute(
                     sql.SQL(
                         "INSERT INTO {} (question, answer, device_id, traces, "
-                        "used_knowledge, used_search, created_at) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                        "used_knowledge, used_search, context_json, created_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
                     ).format(qualified(settings, "cloud_chat_history")),
                     (
-                        question,
-                        answer,
-                        device_id,
+                        question, answer, device_id,
                         json.dumps(traces),
-                        used_knowledge,
-                        used_search,
+                        used_knowledge, used_search,
+                        context,
                         datetime.now(timezone.utc),
                     ),
                 )

@@ -27,6 +27,7 @@ const chatQuestion = ref('请分析当前边缘端画面是否存在异常，并
 const deviceId = ref('edge-camera-01')
 const taskText = ref('姿态识别')
 const chatResult = ref<any>(null)
+const chatLoading = ref(false)
 const chatHistory = ref<any[]>([])
 const chatHistoryLoaded = ref(false)
 const kbFiles = ref<Array<{ name: string; size: number }>>([])
@@ -70,6 +71,8 @@ async function loadState(): Promise<void> {
 async function submitChat(): Promise<void> {
   try {
     error.value = ''
+    chatLoading.value = true
+    chatResult.value = null
     chatResult.value = await sendAgentChat({
       question: chatQuestion.value,
       device_id: deviceId.value,
@@ -78,7 +81,56 @@ async function submitChat(): Promise<void> {
     await loadChatHistory()
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc)
+  } finally {
+    chatLoading.value = false
   }
+}
+
+function downloadReportMd(content: string, filename: string): void {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
+function buildChatReportMd(item: any): string {
+  const lines = [
+    `# 智能体对话报告`,
+    `- 时间: ${formatTime(item.created_at)}`,
+    `- 设备: ${item.device_id}`,
+    `- 知识库: ${item.used_knowledge ? 'YES' : 'NO'} · 搜索: ${item.used_search ? 'YES' : 'NO'}`,
+    ``,
+    `## 问题`,
+    item.question,
+    ``,
+    `## 回复`,
+    item.answer,
+  ]
+  if (item.traces?.length) {
+    lines.push('', '## 执行追踪', ...item.traces.map((t: string) => `- ${t}`))
+  }
+  if (item.context && Object.keys(item.context).length) {
+    lines.push('', '## 场景上下文', '```json', JSON.stringify(item.context, null, 2), '```')
+  }
+  return lines.join('\n')
+}
+
+function printChatReport(item: any): void {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>智能体对话报告</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:40px auto;line-height:1.7;color:#222}
+h1{font-size:20px}h2{font-size:16px;margin-top:20px}pre{background:#f5f5f5;padding:12px;border-radius:6px;font-size:12px}
+.timestamp{color:#888;font-size:13px}.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;margin-right:6px}
+</style></head><body>
+<h1>智能体对话报告</h1>
+<p class="timestamp">时间: ${formatTime(item.created_at)} | 设备: ${item.device_id}</p>
+<p>知识库: ${item.used_knowledge ? 'YES' : 'NO'} · 搜索: ${item.used_search ? 'YES' : 'NO'}</p>
+<h2>问题</h2><p>${item.question}</p>
+<h2>回复</h2>${renderMarkdown(item.answer)}
+${item.context && Object.keys(item.context).length ? `<h2>场景上下文</h2><pre>${JSON.stringify(item.context, null, 2)}</pre>` : ''}
+</body></html>`
+  const w = window.open('', '_blank')
+  if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500) }
 }
 
 async function loadChatHistory(): Promise<void> {
@@ -418,12 +470,13 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
 
 
 provide('cloudStation', {
-  state, loading, error, chatQuestion, deviceId, taskText, chatResult, chatHistory, chatHistoryLoaded,
+  state, loading, error, chatQuestion, deviceId, taskText, chatResult, chatLoading, chatHistory, chatHistoryLoaded,
   kbFiles, kbActiveFile, kbContent, kbLoading, kbSaving, kbSaved, videoRef, streamConnected, liveDetection,
   rtcConnected, scheduleResult, scanResult, scanning, dailyReport, dailyLoading, dailyReportMdUrl, selectedReport,
   reportError, stageRef, stageSize, loadState, submitChat, loadChatHistory, submitSchedule, loadKnowledgeFiles,
   openKnowledgeFile, submitKnowledgeSave, formatFileSize, quickQuery, submitScan, openDailyReport, openReport,
-  exportReport, updateStageSize, activateMonitor, recentDetections, edgeStatus, taskLogs, events, analysisResults,
+  exportReport, downloadReportMd, buildChatReportMd, printChatReport, updateStageSize, activateMonitor,
+  recentDetections, edgeStatus, taskLogs, events, analysisResults,
   latestDetection, serverTime, onlineEdgeCount, pendingEvents, criticalEvents, latestEvent, latestAnalysis, analysisByEvent,
   mediaOverlayStyle, boxStyle, poseOverlay, keypointTitle, eventTypeLabel, severityLabel, statusLabel, analysisFor,
   formatNumber, formatTime, renderMarkdown,

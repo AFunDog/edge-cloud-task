@@ -2,7 +2,16 @@
 import { inject } from 'vue'
 
 const station = inject<Record<string, any>>('cloudStation')!
-const { deviceId, chatQuestion, taskText, chatResult, chatHistory, scheduleResult, scanResult, scanning, submitChat, submitSchedule, submitScan, quickQuery, renderMarkdown, formatTime } = station
+const {
+  deviceId, chatQuestion, taskText, chatResult, chatLoading, chatHistory,
+  scheduleResult, scanResult, scanning, submitChat, submitSchedule, submitScan,
+  quickQuery, downloadReportMd, buildChatReportMd, printChatReport,
+  renderMarkdown, formatTime,
+} = station
+
+function hasLogQuery(item: any): boolean {
+  return item?.traces?.some((t: string) => t.startsWith('log_query') || t.startsWith('log_events'))
+}
 </script>
 
 <template>
@@ -26,7 +35,9 @@ const { deviceId, chatQuestion, taskText, chatResult, chatHistory, scheduleResul
             <label class="field-label">问题</label>
             <textarea class="field-textarea" v-model="chatQuestion" rows="4"></textarea>
           </div>
-          <button class="btn btn-primary" type="button" @click="submitChat">发送到云端智能体</button>
+          <button class="btn btn-primary" type="button" :disabled="chatLoading" @click="submitChat">
+            {{ chatLoading ? '正在分析...' : '发送到云端智能体' }}
+          </button>
           <div style="height:1px;background:var(--border);margin:4px 0"></div>
           <div class="field">
             <label class="field-label">任务描述</label>
@@ -51,22 +62,51 @@ const { deviceId, chatQuestion, taskText, chatResult, chatHistory, scheduleResul
               统计：{{ scanResult.summary.total ?? 0 }} 条事件（过去 {{ scanResult.summary.period_hours ?? '--' }}h）
             </div>
           </div>
+
+          <div v-if="chatLoading" class="result-block">
+            <div class="result-tag">智能体分析中</div>
+            <div class="result-body" style="color:var(--accent)">
+              正在调用 AI 模型分析，请稍候...
+            </div>
+          </div>
+
           <div v-if="chatResult" class="result-block">
             <div class="result-tag">智能体回复</div>
+            <div class="chat-reply-actions">
+              <span class="source-badges">
+                <span class="source-badge" :class="{ on: chatResult.used_knowledge }">知识库 {{ chatResult.used_knowledge ? '✓' : '✗' }}</span>
+                <span class="source-badge" :class="{ on: chatResult.used_search }">搜索 {{ chatResult.used_search ? '✓' : '✗' }}</span>
+                <span class="source-badge" :class="{ on: hasLogQuery(chatResult) }">日志 {{ hasLogQuery(chatResult) ? '✓' : '✗' }}</span>
+              </span>
+              <span style="display:flex;gap:6px">
+                <button class="mini-btn" type="button" @click="downloadReportMd(buildChatReportMd(chatResult), `agent-${chatResult.id || Date.now()}.md`)">导出 MD</button>
+                <button class="mini-btn" type="button" @click="printChatReport(chatResult)">导出 PDF</button>
+              </span>
+            </div>
             <div class="result-body md-content" v-html="renderMarkdown(chatResult.answer)"></div>
             <ul v-if="chatResult.traces?.length" class="trace-list">
               <li v-for="trace in chatResult.traces" :key="trace">{{ trace }}</li>
             </ul>
           </div>
-          <div v-else class="empty-state">智能体回复会显示在这里</div>
+          <div v-else-if="!chatLoading" class="empty-state">智能体回复会显示在这里</div>
 
           <div v-if="chatHistory.length" class="result-block">
             <div class="result-tag">对话历史</div>
             <div class="chat-history-list">
               <div v-for="item in chatHistory" :key="item.id" class="chat-history-item">
                 <div class="chat-question">Q: {{ item.question }}</div>
+                <div class="source-badges" style="margin-bottom:6px">
+                  <span class="source-badge" :class="{ on: item.used_knowledge }">知识库 {{ item.used_knowledge ? '✓' : '✗' }}</span>
+                  <span class="source-badge" :class="{ on: item.used_search }">搜索 {{ item.used_search ? '✓' : '✗' }}</span>
+                </div>
                 <div class="chat-answer md-content" v-html="renderMarkdown(item.answer)"></div>
-                <div class="event-meta">{{ item.device_id }} · {{ formatTime(item.created_at) }}</div>
+                <div class="chat-actions">
+                  <span class="event-meta">{{ item.device_id }} · {{ formatTime(item.created_at) }}</span>
+                  <span style="display:flex;gap:6px">
+                    <button class="mini-btn" type="button" @click="downloadReportMd(buildChatReportMd(item), `chat-${item.id}.md`)">MD</button>
+                    <button class="mini-btn" type="button" @click="printChatReport(item)">PDF</button>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
