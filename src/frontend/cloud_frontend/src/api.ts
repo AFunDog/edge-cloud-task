@@ -1,4 +1,16 @@
-import type { AgentRequest, AgentResponse, EventReport, ScheduleDecision, SystemState, TaskRequest } from './types'
+import type {
+  AgentRequest,
+  AgentResponse,
+  CloudAnalysisResponse,
+  DetectionResult,
+  EdgeStatus,
+  EventReport,
+  SafetyEvent,
+  ScheduleDecision,
+  SystemState,
+  TaskLog,
+  TaskRequest,
+} from './types'
 
 const API_BASE_URL = import.meta.env.VITE_CLOUD_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -92,6 +104,133 @@ export function saveKnowledgeFile(name: string, content: string): Promise<{ name
 // --------------- WebRTC 视频流（连接边端） ---------------
 
 const EDGE_BASE_URL = 'http://localhost:8001'
+
+// --------------- 边端 WebSocket 实时流（检测数据、状态、日志） ---------------
+
+export type StreamMessage =
+  | { type: 'snapshot'; data: SystemState }
+  | { type: 'detection'; data: DetectionResult }
+  | { type: 'status'; data: EdgeStatus }
+  | { type: 'task_log'; data: TaskLog }
+  | { type: 'event'; data: SafetyEvent }
+  | { type: 'analysis_result'; data: CloudAnalysisResponse }
+  | { type: 'error'; message: string }
+
+export interface StreamCallbacks {
+  onDetection?: (data: DetectionResult) => void
+  onSnapshot?: (data: SystemState) => void
+  onStatus?: (data: EdgeStatus) => void
+  onTaskLog?: (data: TaskLog) => void
+  onEvent?: (data: SafetyEvent) => void
+  onAnalysisResult?: (data: CloudAnalysisResponse) => void
+  onError?: (message: string) => void
+  onOpen?: () => void
+  onClose?: () => void
+}
+
+export function connectStream(callbacks: StreamCallbacks): { close: () => void } {
+  const wsUrl = edgeWebSocketUrl('/api/stream')
+  let ws: WebSocket | null = null
+  let reconnectTimer: number | null = null
+  let heartbeatTimer: number | null = null
+  let stopped = false
+
+  function clearHeartbeat(): void {
+    if (heartbeatTimer !== null) {
+      window.clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+  }
+
+  function scheduleReconnect(): void {
+    if (stopped) return
+    if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+    reconnectTimer = window.setTimeout(connect, 2000)
+  }
+
+  function connect(): void {
+    if (stopped) return
+    try {
+      ws = new WebSocket(wsUrl)
+    } catch {
+      scheduleReconnect()
+      return
+    }
+
+    ws.onopen = () => {
+      callbacks.onOpen?.()
+      clearHeartbeat()
+      heartbeatTimer = window.setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send('ping')
+      }, 30000)
+    }
+
+    ws.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data) as StreamMessage
+        switch (msg.type) {
+          case 'snapshot':
+            callbacks.onSnapshot?.(msg.data)
+            break
+          case 'detection':
+            callbacks.onDetection?.(msg.data)
+            break
+          case 'status':
+            callbacks.onStatus?.(msg.data)
+            break
+          case 'task_log':
+            callbacks.onTaskLog?.(msg.data)
+            break
+          case 'event':
+            callbacks.onEvent?.(msg.data)
+            break
+          case 'analysis_result':
+            callbacks.onAnalysisResult?.(msg.data)
+            break
+          case 'error':
+            callbacks.onError?.(msg.message)
+            break
+        }
+      } catch {
+        // ignore malformed stream messages
+      }
+    }
+
+    ws.onerror = () => {}
+    ws.onclose = () => {
+      clearHeartbeat()
+      callbacks.onClose?.()
+      if (!stopped) scheduleReconnect()
+    }
+  }
+
+  connect()
+
+  return {
+    close: () => {
+      stopped = true
+      clearHeartbeat()
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+      if (ws !== null) {
+        ws.onclose = null
+        ws.close()
+        ws = null
+      }
+    },
+  }
+}
+
+function edgeWebSocketUrl(path: string): string {
+  const url = new URL(EDGE_BASE_URL, window.location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  url.pathname = path
+  url.search = ''
+  url.hash = ''
+  return url.toString()
+}
 
 export async function connectWebRTC(
   videoElement: HTMLVideoElement,

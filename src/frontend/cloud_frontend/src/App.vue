@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { connectWebRTC, fetchChatHistory, fetchDailyReport, fetchEventReport, fetchKnowledgeFile, fetchKnowledgeFiles, fetchState, getDailyReportMdUrl, saveKnowledgeFile, scanHazards, scheduleTask, sendAgentChat } from './api'
+import { connectStream, connectWebRTC, fetchChatHistory, fetchDailyReport, fetchEventReport, fetchKnowledgeFile, fetchKnowledgeFiles, fetchState, getDailyReportMdUrl, saveKnowledgeFile, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -36,8 +36,11 @@ const kbLoading = ref(false)
 const kbSaving = ref(false)
 const kbSaved = ref(false)
 const videoRef = ref<HTMLVideoElement | null>(null)
+const streamConnected = ref(false)
+const liveDetection = ref<DetectionResult | null>(null)
 const rtcConnected = ref(false)
 const rtcConnecting = ref(false)
+let streamControl: { close: () => void } | null = null
 let rtcControl: { close: () => void } | null = null
 let rtcReconnectTimer: number | null = null
 const scheduleResult = ref<any>(null)
@@ -205,6 +208,24 @@ function observeStageSize(): void {
 
 // ---------- WebRTC 视频 ----------
 
+function openStream(): void {
+  streamControl?.close()
+  streamControl = connectStream({
+    onSnapshot: (snapshot) => {
+      liveDetection.value = snapshot.recent_detections[0] ?? liveDetection.value
+    },
+    onDetection: (detection) => {
+      liveDetection.value = detection
+    },
+    onOpen: () => {
+      streamConnected.value = true
+    },
+    onClose: () => {
+      streamConnected.value = false
+    },
+  })
+}
+
 async function openWebRTC(): Promise<void> {
   if (!videoRef.value || rtcConnecting.value) return
   rtcConnecting.value = true
@@ -237,6 +258,7 @@ function scheduleRtcReconnect(): void {
 
 onMounted(async () => {
   observeStageSize()
+  openStream()
   await loadState()
   await loadChatHistory()
   await openWebRTC()
@@ -252,6 +274,8 @@ onBeforeUnmount(() => {
   if (rtcReconnectTimer !== null) {
     window.clearTimeout(rtcReconnectTimer)
   }
+  streamControl?.close()
+  streamControl = null
   rtcControl?.close()
 })
 
@@ -260,9 +284,16 @@ const edgeStatus = computed(() => state.value?.edge_status ?? [])
 const taskLogs = computed(() => state.value?.task_logs ?? [])
 const events = computed(() => state.value?.events ?? [])
 const analysisResults = computed(() => state.value?.analysis_results ?? [])
-const latestDetection = computed(() => recentDetections.value[0] || null)
+const latestDetection = computed(() => {
+  const cloudDetection = recentDetections.value[0] || null
+  if (!liveDetection.value) return cloudDetection
+  if (!cloudDetection) return liveDetection.value
+  return detectionTimestamp(liveDetection.value) >= detectionTimestamp(cloudDetection)
+    ? liveDetection.value
+    : cloudDetection
+})
 const serverTime = computed(() => formatTime(state.value?.server_time))
-const activeTab = ref<'home' | 'events' | 'settings' | 'logs'>('home')
+const activeTab = ref<'home' | 'events' | 'settings' | 'logs' | 'knowledge'>('home')
 const onlineEdgeCount = computed(() => edgeStatus.value.filter((item) => item.online).length)
 const pendingEvents = computed(() => events.value.filter((item) => item.status === 'cloud_pending'))
 const criticalEvents = computed(() => events.value.filter((item) => item.severity === 'critical'))
@@ -279,6 +310,11 @@ const _sourceSize = computed(() => {
   if (fw && fh && fw > 0 && fh > 0) return { width: fw, height: fh }
   return { width: 640, height: 360 }
 })
+
+function detectionTimestamp(detection: DetectionResult): number {
+  const timestamp = Date.parse(detection.created_at)
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
 
 const mediaOverlayStyle = computed<Record<string, string>>(() => {
   const { width: sourceWidth, height: sourceHeight } = _sourceSize.value
@@ -393,9 +429,9 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
         </nav>
       </div>
       <div class="topbar-right">
-        <div class="status-pill" :class="{ offline: !rtcConnected }">
+        <div class="status-pill" :class="{ offline: !rtcConnected && !streamConnected }">
           <span class="pulse"></span>
-          {{ rtcConnected ? 'WEBRTC' : (state ? 'DATA' : 'OFFLINE') }}
+          {{ rtcConnected ? (streamConnected ? 'WEBRTC + WS' : 'WEBRTC') : (streamConnected ? 'EDGE WS' : (state ? 'DATA' : 'OFFLINE')) }}
         </div>
         <span class="server-time">{{ serverTime }}</span>
       </div>
@@ -819,7 +855,7 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
                 class="btn btn-primary"
                 type="button"
                 :disabled="kbSaving"
-                @click="saveKnowledgeFile"
+                @click="submitKnowledgeSave"
               >
                 {{ kbSaving ? '保存中...' : '保存' }}
               </button>
