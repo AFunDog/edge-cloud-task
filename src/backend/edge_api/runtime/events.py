@@ -23,6 +23,10 @@ class EdgeEventAnalyzerConfig:
     fall_width_height_ratio: float = 1.25
     fall_min_confidence: float = 0.45
     uncertain_pose_confidence: float = 0.35
+    allowed_hours_start: str = "08:00"
+    allowed_hours_end: str = "22:00"
+    room_capacity: int = 15
+    reasonability_cooldown_seconds: float = 30.0
 
 
 class EdgeEventAnalyzer:
@@ -63,6 +67,14 @@ class EdgeEventAnalyzer:
         uncertain_event = self._uncertain_pose_event(detection, now)
         if uncertain_event is not None:
             events.append(uncertain_event)
+
+        time_event = self._time_validity_event(detection, people, now)
+        if time_event is not None:
+            events.append(time_event)
+
+        capacity_event = self._capacity_event(detection, people, now)
+        if capacity_event is not None:
+            events.append(capacity_event)
 
         return events
 
@@ -240,6 +252,68 @@ class EdgeEventAnalyzer:
             cooldown_key="pose_uncertain",
         )
 
+    def _time_validity_event(
+        self,
+        detection: DetectionResult,
+        people: list[Detection],
+        now: datetime,
+    ) -> SafetyEvent | None:
+        if not people:
+            return None
+        start_h, start_m = self._parse_time_str(self.config.allowed_hours_start)
+        end_h, end_m = self._parse_time_str(self.config.allowed_hours_end)
+        current_time = (now.hour, now.minute)
+        in_allowed = self._time_in_range(current_time, (start_h, start_m), (end_h, end_m))
+        if in_allowed:
+            return None
+        count = len(people)
+        return self._event_reasonability(
+            event_type="unauthorized_time",
+            detection=detection,
+            severity=EventSeverity.WARNING,
+            summary=f"当前时间 {now.strftime('%H:%M')} 不在允许时段（{self.config.allowed_hours_start}-{self.config.allowed_hours_end}），检测到 {count} 人。",
+            evidence=[
+                f"current_time={now.strftime('%H:%M')}",
+                f"allowed_start={self.config.allowed_hours_start}",
+                f"allowed_end={self.config.allowed_hours_end}",
+                f"person_count={count}",
+            ],
+            metrics={
+                "current_time": now.strftime("%H:%M"),
+                "allowed_start": self.config.allowed_hours_start,
+                "allowed_end": self.config.allowed_hours_end,
+                "person_count": count,
+            },
+            now=now,
+            cooldown_key="unauthorized_time",
+        )
+
+    def _capacity_event(
+        self,
+        detection: DetectionResult,
+        people: list[Detection],
+        now: datetime,
+    ) -> SafetyEvent | None:
+        count = len(people)
+        if count < self.config.room_capacity:
+            return None
+        return self._event_reasonability(
+            event_type="excessive_people",
+            detection=detection,
+            severity=EventSeverity.WARNING,
+            summary=f"当前人数 {count} 超过场所容量上限 {self.config.room_capacity} 人，建议关注通风与疏散安全。",
+            evidence=[
+                f"person_count={count}",
+                f"room_capacity={self.config.room_capacity}",
+            ],
+            metrics={
+                "person_count": count,
+                "room_capacity": self.config.room_capacity,
+            },
+            now=now,
+            cooldown_key="excessive_people",
+        )
+
     def _event(
         self,
         *,
@@ -281,3 +355,54 @@ class EdgeEventAnalyzer:
         if end.tzinfo is None:
             end = end.replace(tzinfo=timezone.utc)
         return max(0.0, (end - start).total_seconds())
+
+    def _event_reasonability(
+        self,
+        *,
+        event_type: str,
+        detection: DetectionResult,
+        severity: EventSeverity,
+        summary: str,
+        evidence: list[str],
+        metrics: dict[str, Any],
+        now: datetime,
+        cooldown_key: str,
+    ) -> SafetyEvent | None:
+        if not self._reasonability_cooldown_passed(cooldown_key, now):
+            return None
+        self._last_emitted_at[cooldown_key] = now
+        return SafetyEvent(
+            event_type=event_type,
+            device_id=detection.device_id,
+            frame_id=detection.frame_id,
+            severity=severity,
+            status=EventStatus.CLOUD_PENDING,
+            summary=summary,
+            evidence=evidence,
+            metrics=metrics,
+            created_at=now,
+        )
+
+    def _reasonability_cooldown_passed(self, key: str, now: datetime) -> bool:
+        last = self._last_emitted_at.get(key)
+        if last is None:
+            return True
+        return self._seconds_between(last, now) >= self.config.reasonability_cooldown_seconds
+
+    @staticmethod
+    def _parse_time_str(time_str: str) -> tuple[int, int]:
+        parts = time_str.split(":")
+        return int(parts[0]), int(parts[1])
+
+    @staticmethod
+    def _time_in_range(
+        current: tuple[int, int],
+        start: tuple[int, int],
+        end: tuple[int, int],
+    ) -> bool:
+        cur = current[0] * 60 + current[1]
+        s = start[0] * 60 + start[1]
+        e = end[0] * 60 + end[1]
+        if s <= e:
+            return s <= cur <= e
+        return cur >= s or cur <= e

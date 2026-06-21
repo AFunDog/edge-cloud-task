@@ -522,6 +522,49 @@ button {
   font-weight: 600;
 }
 
+.reasonability-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.reasonability-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 12px;
+}
+
+.reasonability-item .reasonability-icon {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.reasonability-item.warn {
+  border-color: rgba(255, 192, 106, 0.35);
+}
+
+.reasonability-item.warn .reasonability-icon {
+  color: var(--warn);
+}
+
+.reasonability-label {
+  font-weight: 500;
+}
+
+.reasonability-summary {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+}
+
 .device-list,
 .log-list {
   display: grid;

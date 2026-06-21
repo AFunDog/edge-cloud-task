@@ -196,6 +196,16 @@ const analysisResults = computed(() => state.value?.analysis_results ?? [])
 const latestAnalysis = computed(() => analysisResults.value[0] ?? null)
 const pendingEvents = computed(() => events.value.filter((event) => event.status === 'cloud_pending'))
 const analyzedEvents = computed(() => events.value.filter((event) => event.status === 'cloud_analyzed'))
+const hasUnauthorizedTime = computed(() =>
+  events.value.some((event) => event.event_type === 'unauthorized_time' && event.status === 'cloud_pending'),
+)
+const hasExcessivePeople = computed(() =>
+  events.value.some((event) => event.event_type === 'excessive_people' && event.status === 'cloud_pending'),
+)
+const nowTick = ref(Date.now())
+setInterval(() => { nowTick.value = Date.now() }, 30000)
+const hourNow = computed(() => new Date(nowTick.value).getHours().toString().padStart(2, '0'))
+const minuteNow = computed(() => new Date(nowTick.value).getMinutes().toString().padStart(2, '0'))
 const pose = computed(() => latestDetection.value?.pose ?? null)
 const detections = computed(() => latestDetection.value?.detections ?? [])
 const showVideoAnnotations = computed(() => rtcConnected.value && latestDetection.value !== null)
@@ -262,6 +272,8 @@ function eventTypeLabel(value: string): string {
     fall_suspected: '疑似摔倒',
     crowding: '多人聚集',
     pose_uncertain: '姿态不确定',
+    unauthorized_time: '非授权时段',
+    excessive_people: '人数超限',
   }
   return map[value] ?? value
 }
@@ -462,6 +474,23 @@ function keypointTitle(p: NormalizedKeypoint): string {
               <div class="metric-label">云端分析</div>
               <div class="metric-value small">{{ analyzedEvents.length }}</div>
             </div>
+          </div>
+        </section>
+
+        <section class="sidebar-section">
+          <div class="sidebar-section-title">合理性检查</div>
+          <div class="reasonability-grid">
+            <div class="reasonability-item" :class="{ warn: hasUnauthorizedTime }">
+              <span class="reasonability-icon">{{ hasUnauthorizedTime ? '!' : '&#10003;' }}</span>
+              <span class="reasonability-label">时段合规</span>
+            </div>
+            <div class="reasonability-item" :class="{ warn: hasExcessivePeople }">
+              <span class="reasonability-icon">{{ hasExcessivePeople ? '!' : '&#10003;' }}</span>
+              <span class="reasonability-label">容量合规</span>
+            </div>
+          </div>
+          <div class="reasonability-summary">
+            当前 {{ detections.length }} 人 · 时段 {{ hourNow }}:{{ minuteNow }}
           </div>
         </section>
 

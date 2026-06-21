@@ -11,6 +11,7 @@ from backend.edge_api.routes.webrtc import push_video_ndarray
 from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_base64
 from backend.edge_api.runtime.client import CloudClient
 from backend.edge_api.runtime.detector import YoloDetector
+from backend.edge_api.runtime.events import EdgeEventAnalyzer, EdgeEventAnalyzerConfig
 from backend.edge_api.runtime.monitoring import collect_edge_status
 from backend.edge_api.runtime.pipeline import EdgeCycle, EdgePipeline
 from backend.edge_api.runtime.stream import stream_manager
@@ -35,6 +36,14 @@ class EdgeCollector:
             cloud_agent_enabled=settings.edge_cloud_agent_enabled,
             cloud_agent_cooldown_seconds=settings.edge_cloud_agent_cooldown_seconds,
             cloud_analysis_cooldown_seconds=settings.edge_cloud_analysis_cooldown_seconds,
+            event_analyzer=EdgeEventAnalyzer(
+                EdgeEventAnalyzerConfig(
+                    allowed_hours_start=settings.room_allowed_hours_start,
+                    allowed_hours_end=settings.room_allowed_hours_end,
+                    room_capacity=settings.room_capacity,
+                    reasonability_cooldown_seconds=settings.room_reasonability_cooldown_seconds,
+                )
+            ),
         )
         self._detection_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-detection")
         self._cloud_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-cloud-sync")

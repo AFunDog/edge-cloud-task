@@ -123,7 +123,7 @@ class CloudAgent:
     def _event_query(self, request: CloudAnalysisRequest) -> str:
         return " ".join(
             [
-                "机房 实验室 安全 学习状态",
+                "机房 实验室 安全 学习状态 时段 容量 场所管理",
                 request.event.event_type,
                 request.event.summary,
                 " ".join(request.event.evidence[:3]),
@@ -136,7 +136,7 @@ class CloudAgent:
         event_type = request.event.event_type
         if event_type in {"fall_suspected"}:
             return EventSeverity.CRITICAL
-        if event_type in {"long_head_down", "crowding", "pose_uncertain"}:
+        if event_type in {"long_head_down", "crowding", "pose_uncertain", "unauthorized_time", "excessive_people"}:
             return EventSeverity.WARNING
         return request.event.severity
 
@@ -183,6 +183,10 @@ class CloudAgent:
             return ["核对现场是否存在违规聚集或围观。", "结合机房/实验室容量规则判断是否需要疏导。", "持续记录人数变化。"]
         if event_type == "pose_uncertain":
             return ["检查摄像头角度、遮挡和光照。", "等待更多帧确认，不建议单帧直接告警。", "必要时切换更适合上半身/头部姿态的模型。"]
+        if event_type == "unauthorized_time":
+            return ["核实当前时段是否为已授权的加班、维护或特殊活动。", "记录在场人员信息与逗留时段，通知场所管理员。", "若非授权活动，建议现场确认并劝离。"]
+        if event_type == "excessive_people":
+            return ["核对现场是否存在临时活动或违规聚集。", "根据场所容量规则，建议分流或限制入场人数。", "检查现场通风、疏散通道是否通畅。", "持续监控人数变化，若持续超限则升级通知。"]
         if risk_level == EventSeverity.CRITICAL:
             return ["立即人工复核。", "保留事件证据。"]
         if risk_level == EventSeverity.WARNING:

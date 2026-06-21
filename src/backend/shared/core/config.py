@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     yolo_input_size: int = 640
     yolo_conf_threshold: float = 0.25
     yolo_iou_threshold: float = 0.7
+    room_allowed_hours_start: str = "08:00"
+    room_allowed_hours_end: str = "22:00"
+    room_capacity: int = 15
+    room_reasonability_cooldown_seconds: float = 30.0
     public_dir: Path = Path("public")
     yolo_model_path: str = ""
     llm_provider: str = "mock"

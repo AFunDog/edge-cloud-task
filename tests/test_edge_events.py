@@ -122,3 +122,85 @@ def test_person_count_changes_are_not_swallowed_by_cooldown() -> None:
     assert first[0].metrics["person_count"] == 0
     assert second[0].metrics["person_count"] == 1
     assert third[0].metrics["person_count"] == 0
+
+
+def test_event_analyzer_marks_unauthorized_time_outside_allowed_hours() -> None:
+    night_time = datetime(2026, 6, 20, 3, 15, tzinfo=timezone.utc)
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(
+            allowed_hours_start="08:00",
+            allowed_hours_end="22:00",
+            reasonability_cooldown_seconds=0,
+        )
+    )
+    events = analyzer.analyze(_result(detections=[_person_detection()], created_at=night_time))
+    unauthorized = [e for e in events if e.event_type == "unauthorized_time"]
+    assert len(unauthorized) == 1
+    assert unauthorized[0].status is EventStatus.CLOUD_PENDING
+    assert unauthorized[0].severity.value == "warning"
+    assert unauthorized[0].metrics["current_time"] == "03:15"
+
+
+def test_event_analyzer_skips_unauthorized_time_in_allowed_hours() -> None:
+    day_time = datetime(2026, 6, 19, 14, 30, tzinfo=timezone.utc)
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(
+            allowed_hours_start="08:00",
+            allowed_hours_end="22:00",
+            reasonability_cooldown_seconds=0,
+        )
+    )
+    events = analyzer.analyze(_result(detections=[_person_detection()], created_at=day_time))
+    unauthorized = [e for e in events if e.event_type == "unauthorized_time"]
+    assert len(unauthorized) == 0
+
+
+def test_event_analyzer_skips_unauthorized_time_when_no_people() -> None:
+    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=timezone.utc)
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(reasonability_cooldown_seconds=0)
+    )
+    events = analyzer.analyze(_result(detections=[], created_at=night_time))
+    unauthorized = [e for e in events if e.event_type == "unauthorized_time"]
+    assert len(unauthorized) == 0
+
+
+def test_event_analyzer_marks_excessive_people_when_over_capacity() -> None:
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(room_capacity=3, reasonability_cooldown_seconds=0)
+    )
+    people = [_person_detection() for _ in range(5)]
+    events = analyzer.analyze(_result(detections=people))
+    excessive = [e for e in events if e.event_type == "excessive_people"]
+    assert len(excessive) == 1
+    assert excessive[0].status is EventStatus.CLOUD_PENDING
+    assert excessive[0].severity.value == "warning"
+    assert excessive[0].metrics["person_count"] == 5
+    assert excessive[0].metrics["room_capacity"] == 3
+
+
+def test_event_analyzer_skips_excessive_people_within_capacity() -> None:
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(room_capacity=15, reasonability_cooldown_seconds=0)
+    )
+    people = [_person_detection() for _ in range(5)]
+    events = analyzer.analyze(_result(detections=people))
+    excessive = [e for e in events if e.event_type == "excessive_people"]
+    assert len(excessive) == 0
+
+
+def test_reasonability_events_have_separate_cooldown() -> None:
+    night_time = datetime(2026, 6, 20, 3, 0, tzinfo=timezone.utc)
+    analyzer = EdgeEventAnalyzer(
+        EdgeEventAnalyzerConfig(
+            allowed_hours_end="22:00",
+            event_cooldown_seconds=0,
+            reasonability_cooldown_seconds=60,
+        )
+    )
+    first = analyzer.analyze(_result(detections=[_person_detection()], created_at=night_time))
+    second = analyzer.analyze(_result(detections=[_person_detection()], created_at=night_time + timedelta(seconds=5)))
+    unauthorized_first = [e for e in first if e.event_type == "unauthorized_time"]
+    unauthorized_second = [e for e in second if e.event_type == "unauthorized_time"]
+    assert len(unauthorized_first) == 1
+    assert len(unauthorized_second) == 0

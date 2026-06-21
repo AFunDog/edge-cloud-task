@@ -4,12 +4,14 @@
 
 ## 1. 设计目标
 
-本课程设计的核心目标可以归纳为四点：
+本课程设计的核心目标可以归纳为六点：
 
 1. 构建一套包含边端、云端和管理平台的完整边云协同系统。
-2. 在边端实现基于 YOLO 的实时检测与任务调度。
-3. 在云端实现具备大模型调用、联网搜索和本地知识库能力的智能体。
-4. 在管理平台提供可视化监控、任务日志和智能体对话能力。
+2. 在边端实现基于 YOLO-Pose 的实时人物检测、姿态识别与安全事件分析。
+3. 结合本地知识库规则，对画面中人物进行合理性分析（时段合规、容量合规等）。
+4. 在云端实现具备大模型调用、联网搜索和本地知识库能力的智能体。
+5. 在管理平台提供可视化监控、事件管理、合理性分析、自然语言日志查询和隐患扫描能力。
+6. 所有事件可持久化存储，支持历史检索和报告导出。
 
 结合当前仓库，系统已经按 `src/backend/` 作为后端主目录、`src/backend/shared/` 作为共享层、`src/backend/edge_api/` 和 `src/backend/cloud_api/` 作为两套独立服务、`src/frontend/edge_frontend/` 和 `src/frontend/cloud_frontend/` 作为两套前端的结构拆分，适合直接按模块推进实现。
 
@@ -76,6 +78,41 @@
 - 可复现部署方案
 - 联调记录
 - 演示材料和课程报告素材
+
+### 阶段六：知识库规则与合理性分析
+
+- 扩展 `data/knowledge/`，新增机房/实验室场所规则文本（开放时段、容量上限、行为规范）。
+- 在 `EdgeEventAnalyzer` 增加基于时间和人数规则的合理性检查，生成 `unauthorized_time`、`excessive_people` 等新事件。
+- 云端 Agent 在分析时引用知识库规则命中内容，输出规则依据和处置建议。
+- 前端增加合理性检查状态展示。
+
+阶段产物：
+
+- 知识库规则文件（`room_rules.txt`、`safety_regulations.txt`）
+- 合理性事件类型和检测逻辑
+- 知识库驱动的分析链路
+
+**状态：已完成**
+
+### 阶段七：自然语言日志分析与隐患扫描
+
+- 新增 `LogQueryTool`，支持按时间、类型、等级查询历史事件，进行汇总统计和隐患模式识别。
+- 增强 `CloudAgent.answer()`，支持识别日志分析和隐患扫描意图，自动调用日志查询工具。
+- 新增 `POST /api/agent/scan` 隐患扫描接口，返回结构化隐患报告。
+- 前端 Agent 对话面板增加快捷查询模板和历史分析展示。
+
+阶段产物：
+
+- 日志查询与隐患扫描工具
+- 自然语言历史分析能力
+- 隐患报告生成与导出
+
+### 阶段八：系统完善与课程报告
+
+- 编写端到端集成测试，验证全链路。
+- 设计并录制演示流程。
+- 整理课程设计报告（需求分析、架构设计、模块详设、接口文档、测试、总结）。
+- UI/UX 打磨和系统细节优化。
 
 ## 3. 模块划分
 
@@ -161,12 +198,16 @@
 
 | 课程设计要求 | 对应模块 | 仓库落点 | 验收关注点 |
 | --- | --- | --- | --- |
-| 边端实时检测 | 边端模块 | `backend/edge_api/runtime/`、`backend/shared/domain/` | 摄像头采集正常，YOLO 推理可运行，任务可分流 |
-| 姿态动作识别 | 边端姿态模块 | `backend/edge_api/runtime/pose.py` | 能根据关键点给出基础姿态动作，低置信度时转云端复核 |
+| 边端实时检测 | 边端模块 | `backend/edge_api/runtime/`、`backend/shared/domain/` | 摄像头采集正常，YOLO-Pose 推理可运行，任务可分流 |
+| 姿态动作识别 | 边端姿态模块 | `backend/edge_api/runtime/pose.py` | 能根据关键点识别站立、坐下、低头、举手等姿态，低置信度转云端 |
+| 安全事件分析 | 边端事件 + 云端 Agent | `backend/edge_api/runtime/events.py`、`backend/cloud_api/cloud/agent.py` | 边端实时检测低头、摔倒、聚集等事件；云端结合大模型深度分析定级 |
+| 知识库合理性分析 | 知识库 + 边端事件 | `data/knowledge/`、`backend/edge_api/runtime/events.py`、`backend/cloud_api/cloud/knowledge.py` | 时段规则和容量规则匹配，生成 unauthorized_time、excessive_people 事件 |
 | 云端智能体 | 云端模块 | `backend/cloud_api/cloud/`、`backend/cloud_api/routes/agent.py` | 可调用模型、搜索和知识库，输出完整分析结果 |
+| 自然语言日志分析 | 云端 Agent + 日志查询 | `backend/cloud_api/cloud/log_query.py`、`backend/cloud_api/cloud/agent.py` | 可按历史时间查询事件，生成趋势汇总和隐患扫描报告 |
+| 事件持久化与报告 | 数据库 + 事件路由 | `backend/cloud_api/cloud/database.py`、`backend/cloud_api/routes/events.py` | PostgreSQL 持久化，支持历史检索和 Markdown 报告导出 |
 | 网络通信 | 数据模型与 API | `backend/shared/domain/models.py`、`backend/cloud_api/`、`backend/edge_api/` | JSON 结构统一，边云通信稳定 |
-| 边端正式 UI | 边端前端模块 | `frontend/edge_frontend/` | 实时画面、姿态动作、规则和边端调度可展示 |
-| 可视化管理平台 | 云端前端模块 | `frontend/cloud_frontend/` | 状态、日志和智能体对话可展示 |
+| 边端正式 UI | 边端前端模块 | `frontend/edge_frontend/` | 实时画面、姿态骨架、事件列表、合理性状态可展示 |
+| 可视化管理平台 | 云端前端模块 | `frontend/cloud_frontend/` | 事件管理、Agent 分析、日志查询、隐患扫描可展示 |
 | Docker 部署 | 部署与运维 | `Dockerfile.cloud`、`docker-compose.yml` | 云端和管理平台可独立启动 |
 
 ## 5. 非功能性目标

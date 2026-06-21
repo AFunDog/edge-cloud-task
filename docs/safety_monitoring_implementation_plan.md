@@ -2,7 +2,15 @@
 
 ## 1. 项目定位
 
-本项目目标是实现一个面向机房或实验室场景的边云协同安全与学习状态监测系统。系统不是单纯展示 YOLO-Pose 检测结果，而是围绕“边端实时感知、云端复杂分析、管理平台可视化”构建一个完整应用闭环。
+本项目目标是实现一个面向机房或实验室场景的边云协同安全与学习状态监测系统。系统不是单纯展示 YOLO-Pose 检测结果，而是围绕"边端实时感知、云端复杂分析、管理平台可视化"构建一个完整应用闭环。
+
+核心能力：
+
+- **人物与姿态识别**：基于 YOLO-Pose 实时检测画面中的人员数量、关键点、姿态动作。
+- **安全事件分析预警**：边端规则引擎识别低头、摔倒、聚集、异常姿态等安全事件，云端 Agent 结合大模型和知识库进行深度分析定级。
+- **合理性分析**：结合本地知识库中的机房/实验室规则，分析画面中人物的时间合理性（是否在允许时段）、人数合理性（是否超容量），发现异常自动记录。
+- **事件持久化与追溯**：所有事件和分析结果写入 PostgreSQL，支持历史检索和报告导出。
+- **自然语言日志分析**：管理员可通过对话界面让智能体查询历史事件、分析隐患趋势、生成检查报告。
 
 主线原则：
 
@@ -642,20 +650,306 @@ python -m pytest
 python -m compileall src
 ```
 
-## 11. 演示闭环设计
+### 阶段 6：知识库规则增强与合理性分析
+
+目标：
+
+- 扩展本地知识库，补充机房/实验室的场所规则（开放时间、容量上限、行为规范、授权策略等）。
+- 新增合理性事件类型，边端根据时间和人数规则对画面进行实时合规判断。
+- 云端 Agent 能够结合知识库规则对"不合理"场景生成解释性分析。
+
+验收：
+
+- 知识库可检索到机房/实验室规则内容。
+- 边端能在非允许时段检测到人员时生成 `unauthorized_time` 事件。
+- 边端能在人数超出容量上限时生成 `excessive_people` 事件。
+- 云端 Agent 分析时引用知识库命中内容作为判断依据。
+- 管理员可通过前端查看合理性分析结果。
+
+实现状态：已完成。
+
+**6.1 知识库内容扩展**
+
+在 `data/knowledge/` 下新增规则文件：
+
+```
+data/knowledge/
+  edge.txt              # 保留：边端基本能力说明
+  room_rules.txt        # 新增：机房/实验室场所规则
+  safety_regulations.txt # 新增：安全管理规范
+```
+
+`room_rules.txt` 应包含：
+
+- 场所开放时段（例如 08:00-22:00）。
+- 场所容量上限（例如最多 15 人）。
+- 允许的行为和禁止的行为。
+- 异常情况处置流程。
+
+`safety_regulations.txt` 应包含：
+
+- 人员异常姿态与安全隐患的对应关系。
+- 长时间低头的健康风险说明。
+- 多人聚集的管理规定。
+- 摔倒事件的应急处置流程。
+- 非开放时段进入的报警策略。
+
+**6.2 合理性事件模型**
+
+在 `domain/models.py` 中新增 `inference_context` 字段或扩展 `SafetyEvent.metrics`：
+
+- `current_time`：当前时间（ISO 格式），供知识库匹配时段规则。
+- `person_count`：当前人数，供知识库匹配容量规则。
+- `room_capacity`：场所容量上限（从知识库或配置读取）。
+- `allowed_hours`：允许时段描述（从知识库提取）。
+
+新增事件类型：
+
+| 事件类型 | 触发条件 | 严重程度 | 状态 |
+| --- | --- | --- | --- |
+| `unauthorized_time` | 当前时间不在场所开放时段内，且检测到人员 | WARNING | CLOUD_PENDING |
+| `excessive_people` | 人数超过场所容量上限 | WARNING | CLOUD_PENDING |
+| `unusual_duration` | 同一人员连续在画面中超过异常时长阈值 | INFO → WARNING | EDGE_RESOLVED / CLOUD_PENDING |
+
+**6.3 边端合理性检查**
+
+扩展 `EdgeEventAnalyzer`：
+
+- 新增 `_time_validity_event()` 方法：检查当前时间是否在允许时段内。
+- 新增 `_capacity_event()` 方法：检查人数是否超过容量上限。
+- 规则阈值从 `EdgeEventAnalyzerConfig` 可配置。
+- 合理性事件标注 `CLOUD_PENDING`，携带时间、人数等上下文指标。
+
+**6.4 云端合理性分析**
+
+扩展 `CloudAgent.analyze_event()`：
+
+- 对 `unauthorized_time` 和 `excessive_people` 事件生成专项分析。
+- 提示词中加入知识库规则匹配结果作为判断依据。
+- 处置建议中引用知识库规则原文。
+
+新增事件类型的处置建议：
+
+- `unauthorized_time`：核实是否为授权加班或设备维护；记录人员信息和逗留时段；通知场所管理员。
+- `excessive_people`：检查是否临时活动或违规聚集；建议分流或限流；核对现场容量标识。
+
+**6.5 前端展示增强**
+
+- 边端工作台：增加"合理性检查"指标（当前时段状态、人数/容量比）。
+- 云端控制台事件列表：显示 `unauthorized_time`、`excessive_people` 事件类型及状态。
+- 云端分析卡片：展示知识库命中内容和规则依据。
+
+落地文件规划：
+
+- `data/knowledge/room_rules.txt`
+- `data/knowledge/safety_regulations.txt`
+- `src/backend/shared/domain/models.py`
+- `src/backend/edge_api/runtime/events.py`
+- `src/backend/cloud_api/cloud/agent.py`
+- `src/backend/cloud_api/cloud/knowledge.py`
+- `src/frontend/edge_frontend/src/App.vue`
+- `src/frontend/cloud_frontend/src/App.vue`
+- `tests/test_edge_events.py`
+- `tests/test_agent.py`
+
+验证命令：
+
+```powershell
+python -m pytest tests/test_edge_events.py tests/test_agent.py tests/test_events_state.py
+python -m compileall src
+```
+
+---
+
+### 阶段 7：管理员自然语言日志分析与隐患检查
+
+目标：
+
+- 增强云端 Agent，使其能够理解并执行面向历史数据的自然语言查询。
+- 实现"分析日志 → 发现模式 → 检查隐患"的分析链路。
+- 管理员可通过对话界面完成：查询特定时段事件、统计异常趋势、扫描潜在隐患。
+
+验收：
+
+- 可通过自然语言查询"过去 24 小时有哪些异常事件"并得到结构化回复。
+- 可通过自然语言查询"本周隐患趋势分析"并得到汇总报告。
+- Agent 可遍历历史事件，结合知识库规则识别潜在隐患模式。
+- 分析结果可导出为报告。
+
+实现内容：
+
+**7.1 日志查询工具**
+
+新增 `LogQueryTool`（或在 `CloudAgent` 中新增方法）：
+
+```
+src/backend/cloud_api/cloud/log_query.py
+```
+
+能力：
+
+- `query_events(time_range, event_type, severity)`：按时间范围、类型、等级过滤事件。
+- `summarize_events(events)`：对事件集合进行汇总统计（按类型分布、按等级分布、时间趋势）。
+- `scan_hazards(time_range)`：遍历指定时段事件，结合知识库规则识别：
+  - 同一区域频繁出现的 WARNING/CRITICAL 事件。
+  - 在非开放时段持续出现的人员事件。
+  - 长时间未处理的高风险事件。
+  - 某类型事件的发生频率异常升高。
+
+**7.2 Agent 对话增强**
+
+扩展 `CloudAgent.answer()`：
+
+- 在知识库和搜索之外，增加日志查询工具的调用。
+- 识别用户意图：如果问题涉及"历史、日志、趋势、隐患、统计"，自动调用 `LogQueryTool`。
+- 将日志查询结果作为上下文拼入 LLM prompt。
+
+扩展 `AgentRequest`：
+
+- 可携带 `time_range`、`event_type_filter` 等查询参数。
+- 支持 `analysis_mode: "chat" | "log_analysis" | "hazard_scan"`。
+
+**7.3 隐患扫描报告**
+
+新增 `POST /api/agent/scan` 接口：
+
+- 输入：时间范围、关注的事件类型、风险等级阈值。
+- 输出：隐患扫描报告，包含：
+  - 隐患列表（按严重程度排序）。
+  - 每项隐患关联的事件 ID、发生时间、当前状态。
+  - 建议处置措施。
+  - 是否为重复隐患（与历史比较）。
+
+**7.4 前端对话界面增强**
+
+- Agent 对话面板支持快捷查询模板（如"今日异常汇总"、"本周隐患扫描"）。
+- 查询结果以结构化卡片展示，可展开查看关联事件详情。
+- 支持一键导出隐患报告。
+
+落地文件规划：
+
+- `src/backend/cloud_api/cloud/log_query.py`
+- `src/backend/cloud_api/cloud/agent.py`
+- `src/backend/cloud_api/routes/agent.py`
+- `src/backend/shared/domain/models.py`
+- `src/frontend/cloud_frontend/src/App.vue`
+- `src/frontend/cloud_frontend/src/api.ts`
+- `tests/test_agent.py`
+
+验证命令：
+
+```powershell
+python -m pytest tests/test_agent.py tests/test_cloud_events.py
+python -m compileall src
+```
+
+---
+
+### 阶段 8：系统完善、演示准备与课程报告
+
+目标：
+
+- 完成端到端集成测试，确保边端 → 云端 → 前端全链路通畅。
+- 准备课程设计演示流程和录屏素材。
+- 撰写课程设计报告。
+- 系统细节打磨（UI 优化、错误处理、性能调优）。
+
+验收：
+
+- Docker Compose 一键启动全部服务无报错。
+- 演示流程完整可复现：摄像头采集 → 姿态识别 → 事件生成 → 云端分析 → 合理性检查 → 日志查询 → 隐患扫描。
+- 课程报告内容完整（需求分析、架构设计、模块详设、接口文档、测试、总结）。
+
+实现内容：
+
+**8.1 集成测试与联调**
+
+- 编写端到端集成测试脚本，覆盖全链路。
+- 验证边端离线 → 云端恢复后的数据同步。
+- 验证 PostgreSQL 持久化与运行时状态一致性。
+
+**8.2 演示流程设计**
+
+推荐演示流程：
+
+1. 启动系统（Docker Compose 或本地启动）。
+2. 摄像头前依次展示：正常姿态 → 低头 → 摔倒 → 多人进入。
+3. 边端工作台实时显示检测结果、姿态标注、事件告警。
+4. 云端控制台同步显示事件列表、风险等级和 Agent 分析结果。
+5. 展示合理性分析：非开放时段检测 → 触发 `unauthorized_time` 事件 → 知识库规则匹配 → 处置建议。
+6. 展示自然语言分析：管理员输入"分析今天的异常事件" → Agent 查询历史 → 输出汇总报告。
+7. 展示隐患扫描：管理员输入"扫描本周隐患" → Agent 输出隐患列表和处置建议。
+8. 展示事件报告导出 Markdown。
+
+**8.3 UI/UX 打磨**
+
+- 边端工作台：优化实时指标布局，增加合理性检查状态。
+- 云端控制台：事件列表增加筛选（按类型、等级、时段）。
+- Agent 对话面板：添加快捷查询按钮，结构化展示分析结果。
+- 统一色彩标识：INFO 蓝色、WARNING 橙色、CRITICAL 红色。
+
+**8.4 课程报告撰写**
+
+报告结构建议：
+
+1. 需求分析：系统目标、功能需求、非功能需求。
+2. 系统架构设计：总体架构图、模块划分、技术选型。
+3. 模块详细设计：边端采集/检测/事件分析/调度、云端 Agent/知识库/搜索/LLM、通信模型、前端界面。
+4. 接口设计：REST API 列表、WebSocket 消息格式、数据模型。
+5. 数据库设计：ER 图、表结构、索引策略。
+6. 部署方案：Docker Compose 配置、环境变量说明。
+7. 测试：单元测试覆盖、集成测试方案、演示验证结果。
+8. 总结与展望：项目成果、创新点、改进方向。
+
+落地文件规划：
+
+- `docs/course_report.md` 或最终报告文件
+- `scripts/demo_test.py` 或集成测试脚本
+- 前端样式和布局优化
+
+验证命令：
+
+```powershell
+python -m pytest
+python -m compileall src
+docker compose up -d  # 验证全服务启动
+```
+
+---
+
+## 11. 阶段总览表
+
+| 阶段 | 名称 | 状态 | 核心交付 |
+| --- | --- | --- | --- |
+| 1 | 事件模型与状态层 | 已完成 | SafetyEvent、CloudAnalysisRequest/Response、RuntimeState |
+| 2 | 边端事件规则 | 已完成 | EdgeEventAnalyzer、6 类安全事件、Pipeline 接入 |
+| 3 | 云端事件接收与 Agent 分析 | 已完成 | 事件路由、CloudAgent.analyze_event()、结构化分析 |
+| 4 | 前端展示 | 已完成 | 边端工作台事件面板、云端控制台事件/分析页 |
+| 5 | 持久化与报告 | 已完成 | PostgreSQL 持久化、事件检索、Markdown 报告导出 |
+| 6 | 知识库规则与合理性分析 | 已完成 | 场所规则知识库、时间/人数合理性事件、前端合理性指标 |
+| 7 | 自然语言日志分析与隐患检查 | 待开始 | LogQueryTool、历史分析对话、隐患扫描报告 |
+| 8 | 系统完善与课程报告 | 待开始 | 集成测试、演示流程、课程报告 |
+
+## 12. 演示闭环设计
 
 推荐最终演示流程：
 
 1. 启动 Docker Compose 或本地边云服务。
 2. 边端摄像头开始实时检测。
-3. 正常姿态、人数统计、举手在边端完成。
-4. 人为制造长时间低头或异常姿态。
-5. 边端生成异常事件并标记“上传云端”。
-6. 云端 Agent 返回风险等级、判断依据和处置建议。
-7. 云端控制台显示事件报告。
-8. 日志页展示调度链路：边端检测 -> 本地规则 -> 云端分析 -> 管理平台展示。
+3. 正常姿态、人数统计在边端完成。
+4. 人为制造异常场景：
+   - 长时间低头 → 触发 `long_head_down` 事件，云端 Agent 给出健康提醒。
+   - 多人聚集 → 触发 `crowding` 事件，结合知识库容量上限给出处置建议。
+   - 非开放时段检测 → 触发 `unauthorized_time` 事件，Agent 引用知识库时段规则。
+   - 摔倒模拟 → 触发 `fall_suspected` CRITICAL 事件，Agent 给出紧急处置建议。
+5. 云端控制台实时显示事件列表、风险等级、Agent 分析卡片。
+6. 管理员通过自然语言交互：
+   - 输入"分析今天的异常事件" → Agent 查询历史事件，输出类型分布和趋势汇总。
+   - 输入"扫描本周隐患" → Agent 遍历日志，输出隐患列表和优先级建议。
+7. 导出事件报告（Markdown），展示完整追溯链路。
+8. 日志页展示全链路调度：边端检测 → 事件规则 → 合理性检查 → 云端分析 → 管理平台展示。
 
-## 12. 实现约束
+## 13. 实现约束
 
 - 优先复用现有代码，不重写 YOLO、WebRTC、Agent 基础结构。
 - 新增接口时优先补充 `shared/domain/models.py`。

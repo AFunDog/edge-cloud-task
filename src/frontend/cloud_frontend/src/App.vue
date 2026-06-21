@@ -206,6 +206,8 @@ function eventTypeLabel(value: string): string {
     fall_suspected: '疑似摔倒',
     crowding: '多人聚集',
     pose_uncertain: '姿态不确定',
+    unauthorized_time: '非授权时段',
+    excessive_people: '人数超限',
   }
   return map[value] ?? value
 }

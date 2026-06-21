@@ -9,6 +9,7 @@ from backend.edge_api.runtime.camera import CameraSource, encode_frame_to_jpeg_b
 from backend.edge_api.runtime.client import CloudClient, EdgeClient, LatestFramePublisher
 from backend.edge_api.runtime.debug import close_debug_window, render_debug_window
 from backend.edge_api.runtime.detector import YoloDetector
+from backend.edge_api.runtime.events import EdgeEventAnalyzer, EdgeEventAnalyzerConfig
 from backend.edge_api.runtime.monitoring import collect_edge_status
 from backend.edge_api.runtime.pipeline import EdgeCycle, EdgePipeline
 from backend.shared.core.config import get_settings
@@ -46,6 +47,14 @@ def main() -> None:
         cloud_agent_enabled=settings.edge_cloud_agent_enabled and not args.no_cloud_agent,
         cloud_agent_cooldown_seconds=settings.edge_cloud_agent_cooldown_seconds,
         cloud_analysis_cooldown_seconds=settings.edge_cloud_analysis_cooldown_seconds,
+        event_analyzer=EdgeEventAnalyzer(
+            EdgeEventAnalyzerConfig(
+                allowed_hours_start=settings.room_allowed_hours_start,
+                allowed_hours_end=settings.room_allowed_hours_end,
+                room_capacity=settings.room_capacity,
+                reasonability_cooldown_seconds=settings.room_reasonability_cooldown_seconds,
+            )
+        ),
     )
     interval = settings.edge_loop_interval_seconds if args.interval is None else args.interval
     skip_frames = max(1, settings.edge_skip_frames if args.skip_frames is None else args.skip_frames)
