@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchChatHistory, fetchDailyReport, fetchEventReport, fetchState, getDailyReportMdUrl, scanHazards, scheduleTask, sendAgentChat } from './api'
+import { connectWebRTC, fetchChatHistory, fetchDailyReport, fetchEventReport, fetchKnowledgeFile, fetchKnowledgeFiles, fetchState, getDailyReportMdUrl, saveKnowledgeFile, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -29,6 +29,17 @@ const taskText = ref('姿态识别')
 const chatResult = ref<any>(null)
 const chatHistory = ref<any[]>([])
 const chatHistoryLoaded = ref(false)
+const kbFiles = ref<Array<{ name: string; size: number }>>([])
+const kbActiveFile = ref('')
+const kbContent = ref('')
+const kbLoading = ref(false)
+const kbSaving = ref(false)
+const kbSaved = ref(false)
+const videoRef = ref<HTMLVideoElement | null>(null)
+const rtcConnected = ref(false)
+const rtcConnecting = ref(false)
+let rtcControl: { close: () => void } | null = null
+let rtcReconnectTimer: number | null = null
 const scheduleResult = ref<any>(null)
 const scanResult = ref<any>(null)
 const scanning = ref(false)
@@ -38,16 +49,9 @@ const dailyReportMdUrl = ref('')
 const selectedReport = ref<EventReport | null>(null)
 const reportError = ref('')
 const stageRef = ref<HTMLElement | null>(null)
-const stageImgRef = ref<HTMLImageElement | null>(null)
 const stageSize = ref({ width: 0, height: 0 })
-const imgNaturalSize = ref({ width: 0, height: 0 })
 let timer: number | null = null
 let stageResizeObserver: ResizeObserver | null = null
-
-function onImgLoad(event: Event): void {
-  const img = event.target as HTMLImageElement
-  imgNaturalSize.value = { width: img.naturalWidth, height: img.naturalHeight }
-}
 
 async function loadState(): Promise<void> {
   try {
@@ -94,6 +98,47 @@ async function submitSchedule(): Promise<void> {
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc)
   }
+}
+
+async function loadKnowledgeFiles(): Promise<void> {
+  try {
+    kbFiles.value = await fetchKnowledgeFiles()
+  } catch {
+    kbFiles.value = []
+  }
+}
+
+async function openKnowledgeFile(name: string): Promise<void> {
+  try {
+    kbLoading.value = true
+    kbSaved.value = false
+    const file = await fetchKnowledgeFile(name)
+    kbActiveFile.value = name
+    kbContent.value = file.content
+  } catch {
+    // ignore
+  } finally {
+    kbLoading.value = false
+  }
+}
+
+async function submitKnowledgeSave(): Promise<void> {
+  if (!kbActiveFile.value) return
+  try {
+    kbSaving.value = true
+    kbSaved.value = false
+    await saveKnowledgeFile(kbActiveFile.value, kbContent.value)
+    kbSaved.value = true
+  } catch {
+    // ignore
+  } finally {
+    kbSaving.value = false
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  return `${(bytes / 1024).toFixed(1)} KB`
 }
 
 function quickQuery(question: string): void {
@@ -158,11 +203,44 @@ function observeStageSize(): void {
   stageResizeObserver.observe(stageRef.value)
 }
 
+// ---------- WebRTC 视频 ----------
+
+async function openWebRTC(): Promise<void> {
+  if (!videoRef.value || rtcConnecting.value) return
+  rtcConnecting.value = true
+  rtcControl?.close()
+  rtcControl = null
+  try {
+    rtcControl = await connectWebRTC(
+      videoRef.value,
+      undefined,
+      (isConnected) => {
+        rtcConnected.value = isConnected
+        if (!isConnected && !rtcConnecting.value) scheduleRtcReconnect()
+      },
+    )
+  } catch {
+    // ignore
+  } finally {
+    rtcConnecting.value = false
+    if (!rtcConnected.value) scheduleRtcReconnect()
+  }
+}
+
+function scheduleRtcReconnect(): void {
+  if (rtcReconnectTimer !== null) return
+  rtcReconnectTimer = window.setTimeout(() => {
+    rtcReconnectTimer = null
+    if (!rtcConnected.value && !rtcConnecting.value) openWebRTC()
+  }, 3000)
+}
+
 onMounted(async () => {
   observeStageSize()
   await loadState()
   await loadChatHistory()
-  timer = window.setInterval(loadState, 1500)
+  await openWebRTC()
+  timer = window.setInterval(loadState, 500)
 })
 
 onBeforeUnmount(() => {
@@ -171,6 +249,10 @@ onBeforeUnmount(() => {
   if (timer !== null) {
     window.clearInterval(timer)
   }
+  if (rtcReconnectTimer !== null) {
+    window.clearTimeout(rtcReconnectTimer)
+  }
+  rtcControl?.close()
 })
 
 const recentDetections = computed(() => state.value?.recent_detections ?? [])
@@ -182,7 +264,6 @@ const latestDetection = computed(() => recentDetections.value[0] || null)
 const serverTime = computed(() => formatTime(state.value?.server_time))
 const activeTab = ref<'home' | 'events' | 'settings' | 'logs'>('home')
 const onlineEdgeCount = computed(() => edgeStatus.value.filter((item) => item.online).length)
-const cloudStatus = computed(() => error.value ? 'DEGRADED' : 'ONLINE')
 const pendingEvents = computed(() => events.value.filter((item) => item.status === 'cloud_pending'))
 const criticalEvents = computed(() => events.value.filter((item) => item.severity === 'critical'))
 const latestEvent = computed(() => events.value[0] || null)
@@ -193,11 +274,8 @@ const analysisByEvent = computed(() => {
   return map
 })
 const _sourceSize = computed(() => {
-  const iw = imgNaturalSize.value.width
-  const ih = imgNaturalSize.value.height
   const fw = latestDetection.value?.frame_width
   const fh = latestDetection.value?.frame_height
-  if (iw > 0 && ih > 0) return { width: iw, height: ih }
   if (fw && fh && fw > 0 && fh > 0) return { width: fw, height: fh }
   return { width: 640, height: 360 }
 })
@@ -311,12 +389,13 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
           <button class="tab-btn" :class="{ active: activeTab === 'events' }" @click="activeTab = 'events'">事件</button>
           <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">智能体</button>
           <button class="tab-btn" :class="{ active: activeTab === 'logs' }" @click="activeTab = 'logs'">日志</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'knowledge' }" @click="activeTab = 'knowledge'; loadKnowledgeFiles()">知识库</button>
         </nav>
       </div>
       <div class="topbar-right">
-        <div class="status-pill" :class="{ offline: !!error }">
+        <div class="status-pill" :class="{ offline: !rtcConnected }">
           <span class="pulse"></span>
-          {{ cloudStatus }}
+          {{ rtcConnected ? 'WEBRTC' : (state ? 'DATA' : 'OFFLINE') }}
         </div>
         <span class="server-time">{{ serverTime }}</span>
       </div>
@@ -327,18 +406,15 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
       <!-- Detection viewport -->
       <div class="viewport">
         <div ref="stageRef" class="frame-wrap">
-          <img
-            ref="stageImgRef"
-            v-if="latestDetection?.image_jpeg_base64"
-            class="frame-image"
-            :src="`data:image/jpeg;base64,${latestDetection.image_jpeg_base64}`"
-            alt="edge camera frame"
-            @load="onImgLoad"
-          />
-          <div v-else class="frame-placeholder">
+          <video
+            ref="videoRef"
+            class="frame-video"
+            autoplay playsinline muted
+          ></video>
+          <div v-if="!rtcConnected" class="frame-placeholder">
             <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            <strong>等待边端快照</strong>
-            <span>云端每 1.5 秒刷新状态，画面由边端检测周期压缩后上报。</span>
+            <strong>等待边端 WebRTC 视频流</strong>
+            <span>视频通过 WebRTC 直接从边端推送，数据通过云端 API 同步。</span>
           </div>
 
           <!-- HUD overlay -->
@@ -695,7 +771,7 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
     </main>
 
     <!-- Logs -->
-    <main v-else class="main main-logs">
+    <main v-else-if="activeTab === 'logs'" class="main main-logs">
       <div class="logs-page">
         <div class="logs-header">
           <h2 class="logs-title">任务日志</h2>
@@ -712,6 +788,52 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
           </div>
         </div>
         <div v-else class="empty-state">暂无任务日志</div>
+      </div>
+    </main>
+
+    <!-- Knowledge -->
+    <main v-else class="main main-logs">
+      <div class="knowledge-page">
+        <div class="knowledge-layout">
+          <div class="knowledge-file-list">
+            <div class="panel-title">知识库文件</div>
+            <div v-if="kbFiles.length" class="kb-file-items">
+              <div
+                v-for="f in kbFiles"
+                :key="f.name"
+                class="kb-file-item"
+                :class="{ active: kbActiveFile === f.name }"
+                @click="openKnowledgeFile(f.name)"
+              >
+                <span class="kb-file-name">{{ f.name }}</span>
+                <span class="kb-file-size">{{ formatFileSize(f.size) }}</span>
+              </div>
+            </div>
+            <div v-else class="empty-state">加载中...</div>
+          </div>
+          <div class="knowledge-editor">
+            <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>{{ kbActiveFile || '选择文件' }}</span>
+              <button
+                v-if="kbActiveFile"
+                class="btn btn-primary"
+                type="button"
+                :disabled="kbSaving"
+                @click="saveKnowledgeFile"
+              >
+                {{ kbSaving ? '保存中...' : '保存' }}
+              </button>
+            </div>
+            <textarea
+              v-if="kbActiveFile"
+              v-model="kbContent"
+              class="kb-editor-textarea"
+              :disabled="kbLoading"
+            ></textarea>
+            <div v-else class="empty-state" style="margin-top:60px">选择左侧文件以编辑</div>
+            <div v-if="kbSaved" class="kb-saved-hint">已保存</div>
+          </div>
+        </div>
       </div>
     </main>
   </div>

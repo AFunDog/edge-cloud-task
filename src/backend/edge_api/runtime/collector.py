@@ -81,6 +81,7 @@ class EdgeCollector:
         self._thread.start()
         self._cloud_worker = threading.Thread(target=self._run_cloud_worker, name="edge-cloud-worker", daemon=True)
         self._cloud_worker.start()
+        print("[EdgeCollector] 云端同步 worker 已启动")
 
     def stop(self) -> None:
         self._stop.set()
@@ -245,6 +246,10 @@ class EdgeCollector:
                     return
                 try:
                     self._pipeline.sync_cloud(cycle)
+                    if cycle.cloud_synced:
+                        print(f"[EdgeCollector] 云端同步完成 frame={cycle.detection.frame_id}")
+                    elif cycle.cloud_error:
+                        print(f"[EdgeCollector] 云端同步失败: {cycle.cloud_error}")
                     for result in cycle.cloud_analysis_results or []:
                         runtime_state.add_analysis_result(result)
                         if self._loop and not self._loop.is_closed():

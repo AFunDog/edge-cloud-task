@@ -73,3 +73,121 @@ export function fetchChatHistory(limit: number = 20): Promise<
 > {
   return request(`/api/agent/history?limit=${limit}`)
 }
+
+export function fetchKnowledgeFiles(): Promise<Array<{ name: string; size: number }>> {
+  return request('/api/knowledge')
+}
+
+export function fetchKnowledgeFile(name: string): Promise<{ name: string; suffix: string; content: string; size: number }> {
+  return request(`/api/knowledge/${encodeURIComponent(name)}`)
+}
+
+export function saveKnowledgeFile(name: string, content: string): Promise<{ name: string; size: number; ok: boolean }> {
+  return request(`/api/knowledge/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  })
+}
+
+// --------------- WebRTC 视频流（连接边端） ---------------
+
+const EDGE_BASE_URL = 'http://localhost:8001'
+
+export async function connectWebRTC(
+  videoElement: HTMLVideoElement,
+  onDimensionReady?: (w: number, h: number) => void,
+  onStateChange?: (connected: boolean) => void,
+): Promise<{ close: () => void }> {
+  console.log('[RTC] 创建 PeerConnection')
+  const pc = new RTCPeerConnection()
+  let pcId = ''
+  let stopped = false
+  let connectTimer: number | null = null
+  let videoPlaying = false
+
+  const markVideoPlaying = () => {
+    videoPlaying = true
+    if (connectTimer !== null) window.clearTimeout(connectTimer)
+    connectTimer = null
+    onStateChange?.(true)
+  }
+  videoElement.addEventListener('playing', markVideoPlaying)
+
+  pc.ontrack = (event: RTCTrackEvent) => {
+    console.log('[RTC] 收到视频轨道')
+    videoElement.srcObject = event.streams[0] ?? new MediaStream([event.track])
+    void videoElement.play().catch((err) => console.warn('[RTC] 视频自动播放失败', err))
+  }
+
+  pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
+    if (!event.candidate || !pcId) return
+    fetch(`${EDGE_BASE_URL}/api/webrtc/candidate/${pcId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event.candidate),
+    }).catch(() => {})
+  }
+
+  pc.onconnectionstatechange = () => {
+    console.log(`[RTC] 连接状态: ${pc.connectionState}`)
+    if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+      onStateChange?.(false)
+    }
+  }
+
+  const onMeta = () => {
+    onDimensionReady?.(videoElement.videoWidth || 640, videoElement.videoHeight || 360)
+  }
+  videoElement.addEventListener('loadedmetadata', onMeta, { once: true })
+
+  const offer = await pc.createOffer({ offerToReceiveVideo: true })
+  await pc.setLocalDescription(offer)
+  await waitForIceGatheringComplete(pc)
+
+  console.log('[RTC] 发送 SDP offer')
+  const resp = await fetch(`${EDGE_BASE_URL}/api/webrtc/offer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sdp: pc.localDescription!.sdp, type: pc.localDescription!.type }),
+  })
+  if (!resp.ok) throw new Error(`WebRTC offer failed: HTTP ${resp.status}`)
+  const answerData = await resp.json()
+  pcId = answerData.pc_id
+
+  await pc.setRemoteDescription(new RTCSessionDescription({ sdp: answerData.sdp, type: answerData.type }))
+  console.log('[RTC] 信令协商完成，等待媒体连接')
+  connectTimer = window.setTimeout(() => {
+    if (!stopped && !videoPlaying) {
+      console.warn(`[RTC] 首帧超时，当前连接状态: ${pc.connectionState}`)
+      pc.close()
+      onStateChange?.(false)
+    }
+  }, 8000)
+
+  return {
+    close: () => {
+      stopped = true
+      if (connectTimer !== null) window.clearTimeout(connectTimer)
+      videoElement.removeEventListener('playing', markVideoPlaying)
+      onStateChange?.(false)
+      videoElement.srcObject = null
+      pc.close()
+    },
+  }
+}
+
+function waitForIceGatheringComplete(pc: RTCPeerConnection): Promise<void> {
+  if (pc.iceGatheringState === 'complete') return Promise.resolve()
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(done, 3000)
+    function done(): void {
+      window.clearTimeout(timeout)
+      pc.removeEventListener('icegatheringstatechange', onStateChange)
+      resolve()
+    }
+    function onStateChange(): void {
+      if (pc.iceGatheringState === 'complete') done()
+    }
+    pc.addEventListener('icegatheringstatechange', onStateChange)
+  })
+}
