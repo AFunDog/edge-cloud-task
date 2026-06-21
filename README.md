@@ -1,159 +1,129 @@
-# 端-边-云协同智能检测系统
+# 边云协同安全监测系统
 
-本项目实现一套课程实验用的完整系统骨架，覆盖边缘侧摄像头采集与本地推理、云端智能体服务和独立的 Vue3 前端控制台。
-当前同时提供一个独立的 PostgreSQL 服务作为系统数据底座，默认不写入展示数据，后续可平滑扩展为向量数据库。
+基于 YOLO-Pose 与云端智能体（阿里百炼 qwen3-vl-plus）的端-边-云协同安全监测系统，面向机房/实验室场景，实现实时人物检测、姿态识别、安全事件分析、场所合理性检查、自然语言日志查询和隐患扫描。
 
 ## 结构
 
 ```text
 src/backend/
-  cloud_api/      云端 FastAPI 程序
-  edge_api/       边端 FastAPI 程序
-  shared/         共享层
+  cloud_api/      云端 FastAPI (Agent/事件/分析/日报/持久化)
+  edge_api/       边端 FastAPI (采集/检测/姿态/事件/WebRTC)
+  shared/         共享层 (模型/配置/状态/调度)
 src/frontend/
-  cloud_frontend/ 云端 Vite + Vue3 控制台
-  edge_frontend/  边端 Vite + Vue3 工作台
-docs/             架构与实验说明
-tests/            核心逻辑测试
-data/postgres/    PostgreSQL 数据目录挂载约定
+  cloud_frontend/ 云端控制台 (监控/事件/智能体/日报)
+  edge_frontend/  边端工作台 (视频/检测框/姿态骨架/事件/合理性)
+docs/             设计文档与课程报告
+tests/            54 个单元测试
+scripts/          模型下载 / 集成测试
+data/knowledge/   本地知识库 (场所规则/安全规范)
 ```
 
 文档入口：
 
-- `docs/architecture.md`：系统总体架构说明
-- `docs/course_design_plan.md`：课程设计要求拆解、实施计划和模块划分
+- `docs/architecture.md` — 系统总体架构
+- `docs/course_design_plan.md` — 课程设计实施计划
+- `docs/safety_monitoring_implementation_plan.md` — 详细技术方案 (8 阶段全完成)
+- `docs/course_report.md` — 课程设计报告
 
-## 本地运行
+## 快速启动
 
 ```powershell
+# 1. 安装依赖 (首次)
 python -m venv .venv
-.\.venv\Scripts\pip install -e ".[test,yolo]"
-.\.venv\Scripts\uvicorn backend.cloud_api.main:app --reload
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[yolo,test]"
+
+# 2. 启动云端 API (终端1)
+cloud-api
+
+# 3. 启动边端 API (终端2，自动打开摄像头)
+edge-api
+
+# 4. 启动前端 (终端3/4)
+cd src\frontend\cloud_frontend && npm install && npm run dev   # :5173
+cd src\frontend\edge_frontend && npm install && npm run dev    # :5174
 ```
 
-另开一个终端使用一条命令启动边端后端：
+访问 `http://localhost:5174` 查看边端工作台，`http://localhost:5173` 查看云端控制台。
 
-```powershell
-.\.venv\Scripts\python -m backend.edge_api.main
+## 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| 实时检测 | YOLO-Pose ONNX/OpenVINO 双后端，17 点人体关键点 |
+| 姿态识别 | 9 种姿态：站/坐/举手/蹲/头部3向/上身2向 |
+| 安全事件 | 10 类事件自动检测 (低头/摔倒/聚集/非授权时段/容量超限等) |
+| 合理性分析 | 基于知识库的时段合规 + 容量合规实时判断 |
+| 云端分析 | 大模型 (qwen3-vl-plus) 多模态分析，含图像输入 |
+| 日志查询 | 自然语言查历史事件，支持"最近24h异常"等 |
+| 隐患扫描 | 5 类隐患自动检测 (未处理高风险/重复非授权/频繁聚集/摔倒/超容量) |
+| 日报报告 | 每日检测报告 JSON + Markdown，支持下载 |
+| 持久化 | PostgreSQL 持久化 + 启动恢复 + 全文检索 |
+| 视频流 | WebRTC 实时推送 + WebSocket 状态广播 |
+| Docker | 6 服务一键部署 (`docker compose up -d`) |
+
+## 配置
+
+关键环境变量 (完整列表见 `.env.example`)：
+
+```env
+# 大模型
+LLM_PROVIDER=openai-compatible          # 或 mock (测试用)
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3-vl-plus
+
+# 场所规则
+ROOM_ALLOWED_HOURS_START=08:00
+ROOM_ALLOWED_HOURS_END=22:00
+ROOM_CAPACITY=15
+ROOM_REASONABILITY_COOLDOWN_SECONDS=30
+
+# 边端控制
+EDGE_SKIP_FRAMES=2                      # 每 N 帧推理一次
+EDGE_CLOUD_AGENT_COOLDOWN_SECONDS=10    # Agent 调用冷却
+EDGE_CLOUD_ANALYSIS_COOLDOWN_SECONDS=3  # 分析请求冷却
+EDGE_CLOUD_SYNC_ENABLED=true            # 云端同步开关
+EDGE_CLOUD_INCLUDE_IMAGE=true           # 上传分析图像
+
+# 持久化
+POSTGRES_PERSISTENCE_ENABLED=true
+EVENT_HISTORY_LIMIT=200
 ```
-
-该命令会同时启动边端 API 和内置摄像头采集器，不需要额外启动 runner。激活虚拟环境后也可以直接运行 `python -m backend.edge_api.main`。边端 API 启动时会自动打开摄像头并启动采集、YOLO 检测、姿态分析、任务调度、WebRTC 视频发布和云端同步，关闭 API 时会一并停止采集器。云端不可用时，本地检测、调度和边端页面仍保持工作。通过 `http://localhost:8001/health` 可以查看采集器、云端同步和智能体调用状态。
-
-另开一个终端启动云端前端开发服务器：
-
-```powershell
-cd src/frontend/cloud_frontend
-npm install
-npm run dev
-```
-
-再开一个终端启动边端前端开发服务器：
-
-```powershell
-cd src/frontend/edge_frontend
-npm install
-npm run dev
-```
-
-也可以用一个 PowerShell 调试脚本同时启动边端前端和包含采集器的边端后端；按 `Ctrl+C` 会一起停止：
-
-```powershell
-.\scripts\start_edge_dev.ps1
-```
-
-实时视频默认由采集器在后台压缩并通过 WebRTC 推送，繁忙时只保留最新帧，避免旧帧堆积造成越来越高的延迟。检测和云端同步使用独立线程，网络波动不会阻塞本地视频与推理。可在 `.env` 中通过 `EDGE_STREAM_WIDTH`、`EDGE_STREAM_JPEG_QUALITY` 和 `EDGE_STREAM_MAX_FPS` 调整清晰度与流畅度。
-
-边端在本地电脑运行，默认打开摄像头并执行 YOLO 检测。摄像头不可用、模型缺失或 YOLO 依赖缺失时，内置采集器会在 `/health` 中报告错误，API 仍保持可用。
-
-独立 runner 不是边端后端启动所必需的，仅用于单帧检查或本地调试窗口。运行它之前应停止边端后端，或在 `.env` 中设置 `EDGE_COLLECTOR_ENABLED=false`，避免与 API 内置采集器争抢摄像头：
-
-```powershell
-.\.venv\Scripts\pip install -e .[yolo]
-.\.venv\Scripts\python -m backend.edge_api.runtime.runner --task "姿态识别" --once
-```
-
-检测器支持 `.onnx` 和 OpenVINO IR。`.onnx` 使用 ONNX Runtime；OpenVINO 使用 `.xml + .bin`，可直接把 `YOLO_MODEL_PATH` 指向 `.xml` 文件，或指向包含 `.xml` 的 OpenVINO 导出目录。
-
-如果要打开一个简单的调试窗口，显示当前采集画面、检测框和运行数据：
-
-```powershell
-.\.venv\Scripts\python -m backend.edge_api.runtime.runner --task "姿态识别" --debug-window
-```
-
-边端正式 UI 会显示检测框、类别、置信度、显示 FPS、YOLO FPS、推理耗时、目标数、后端、姿态动作和调度信息；按 `q` 或 `Esc` 退出调试窗口时不会影响后台采集。
-
-姿态识别默认先走边端规则分类，低置信度或未知动作会自动调度至云端 Agent 复核。Agent 调用设有冷却时间，避免连续视频帧高频调用模型。云端同步默认携带检测帧预览，供云端管理页展示画面与检测框。可通过 `EDGE_CLOUD_SYNC_ENABLED`、`EDGE_CLOUD_AGENT_ENABLED`、`EDGE_CLOUD_AGENT_COOLDOWN_SECONDS` 和 `EDGE_CLOUD_INCLUDE_IMAGE` 控制该行为；runner 也支持 `--no-cloud-sync` 和 `--no-cloud-agent`。
-
-YOLO 模型放在根目录 `public/` 下，当前运行时支持 `.onnx` 和 OpenVINO `.xml`。要切换到姿态检测模型，直接在 `.env` 里设置 `YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose.onnx`，或设置为 OpenVINO 导出目录/`.xml` 文件，边端会自动识别 `task=pose` 并绘制关键点。
-
-OpenVINO 示例：
-
-```powershell
-YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose_openvino_model
-# 或
-YOLO_MODEL_PATH=public/yolo-v26/yolo26n-pose_openvino_model/yolo26n-pose.xml
-```
-
-如果要快速下载官方姿态模型：
-
-```powershell
-.\.venv\Scripts\python scripts\download_pose_model.py --model yolo26n-pose.pt
-.\.venv\Scripts\python scripts\download_pose_model.py --model yolo26s-pose.pt
-```
-
-当前 Ultralytics 官方姿态模型包括 `yolo26n-pose.pt`、`yolo26s-pose.pt`、`yolo26m-pose.pt`、`yolo26l-pose.pt` 和 `yolo26x-pose.pt`，文档说明这些模型会在首次使用时自动从最新发布版下载。
-
-边端服务器默认监听 `8001`，云端服务器默认监听 `8000`。如果边端和云端分离部署，把 `.env` 里的 `EDGE_API_BASE_URL` 和 `CLOUD_API_BASE_URL` 改成对应地址即可。
-PostgreSQL 默认容器内监听 `5432`。Docker 本地映射为 `localhost:5433`，云端后端启动时会在 `POSTGRES_VECTOR_ENABLED=true` 时自行启用 `pgvector` 扩展，不再依赖数据库初始化 SQL 脚本。
 
 ## Docker
 
 ```powershell
-docker compose up --build
+docker compose up -d                      # 云端 + 前端 + 数据库
+docker compose --profile edge up -d       # 含边端采集
+
+# 服务端口
+# 云端 API      → http://localhost:8000
+# 边端 API      → http://localhost:8001
+# 云端前端      → http://localhost:8080
+# 边端前端      → http://localhost:8081
+# PostgreSQL    → localhost:5433
 ```
 
-默认暴露：
+## API 概览
 
-- 云端 API: `http://localhost:8000`
-- 云端前端: `http://localhost:8080`
-- 边端 API: `http://localhost:8001`
-- 边端前端: `http://localhost:8081`
-- PostgreSQL: `localhost:5432`
+| 端 | 主要接口 |
+|------|---------|
+| 云端 | `/api/events` (CRUD+分析+搜索+报告) `/api/agent` (对话+扫描) `/api/reports/daily` (日报) `/api/state` |
+| 边端 | `/api/stream` (WebSocket) `/api/webrtc` (视频流) `/api/edge` (检测+事件) `/api/state` |
 
-数据库默认账号：
+完整列表见 `docs/course_report.md` 第 4 节。
 
-- Database: `edge_cloud`
-- User: `edge_cloud`
-- Password: `edge_cloud_dev`
-
-如果只想单独启动数据库：
+## 测试
 
 ```powershell
-docker compose up -d postgres
+# 单元测试 (默认 mock LLM，不触发付费 API)
+python -m pytest                          # 54 tests
+
+# 集成测试 (需先启动云端)
+python scripts/demo_test.py
+python scripts/demo_test.py --quick       # 仅单元+编译
 ```
 
-进入数据库：
+## 项目状态
 
-```powershell
-docker compose exec postgres psql -U edge_cloud -d edge_cloud
-```
-
-验证 `pgvector` 扩展是否已就绪：
-
-```sql
-\dx
-```
-
-Docker 中的 `edge` 服务只负责边端 API 和前端数据入口，不直接占用摄像头。需要在 Linux 边端容器中运行摄像头采集、YOLO 检测和云端同步时：
-
-```powershell
-docker compose --profile edge up --build
-```
-
-Windows 本机摄像头更建议直接运行边端 API，因为 Docker Desktop 对宿主摄像头透传依赖额外设备映射。
-
-## 当前实现边界
-
-默认云端不会调用付费模型或真实联网搜索。云端智能体通过可替换的 `LLMClient`、`SearchTool` 和 `KnowledgeBase` 接口工作；配置 `LLM_PROVIDER=openai-compatible`、`LLM_BASE_URL`、`LLM_API_KEY` 后可调用兼容 OpenAI Chat Completions 的模型服务。云端前端只通过 `/api` 与云端交互，不包含业务逻辑；边端前端只通过 `/api` 与边端服务器交互。
-
-当前数据库只承担基础设施角色，尚未接入 FastAPI 的业务读写链路。云端后端负责维护需要的 PostgreSQL schema 和 `pgvector` 扩展；后续若要改为向量数据库，优先建议直接基于现有 `pgvector` 扩展增加向量表和检索接口，而不是再切换到另一套数据库产品。
+8 个开发阶段全部完成，54 测试 100% 通过，编译 0 错误。详见 `docs/safety_monitoring_implementation_plan.md` 阶段总览表。

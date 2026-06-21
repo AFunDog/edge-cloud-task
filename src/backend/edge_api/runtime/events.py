@@ -1,3 +1,11 @@
+"""边端帧级安全事件分析器。
+
+基于 YOLO-Pose 检测结果和短期状态维护，实时识别 10 类安全事件：
+- 安全类: long_head_down / fall_suspected / crowding / pose_uncertain
+- 姿态类: person_count / pose_* (6种)
+- 合理性类: unauthorized_time / excessive_people
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -30,7 +38,12 @@ class EdgeEventAnalyzerConfig:
 
 
 class EdgeEventAnalyzer:
-    """Turns frame-level detections into edge safety events with short-term memory."""
+    """帧级安全事件分析器，维护短期检测状态。
+
+    根据 YOLO-Pose 的 DetectionResult 和 PoseAnalysis，
+    结合时间窗口和冷却机制，生成结构化 SafetyEvent 列表。
+    安全类和合理性事件使用独立冷却周期以避免高频噪声。
+    """
 
     def __init__(self, config: EdgeEventAnalyzerConfig | None = None) -> None:
         self.config = config or EdgeEventAnalyzerConfig()

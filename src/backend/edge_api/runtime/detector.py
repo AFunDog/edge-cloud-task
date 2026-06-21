@@ -17,6 +17,12 @@ DEFAULT_KEYPOINT_NAMES = [
 
 
 class YoloDetector:
+    """YOLO 目标检测器，支持 ONNX Runtime 和 OpenVINO 双后端。
+
+    自动解析模型元数据 (task, class names, keypoint names)，
+    支持标准 YOLO 输出和 NMS 后处理输出两种格式。
+    """
+
     def __init__(self, model_path: str = "", public_dir: str | Path = "public", imgsz: int = 640, conf_threshold: float = 0.25, iou_threshold: float = 0.7) -> None:
         self.public_dir = Path(public_dir)
         self.imgsz = imgsz

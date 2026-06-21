@@ -1,3 +1,9 @@
+"""全局配置管理。
+
+基于 pydantic-settings 从 .env 文件和环境变量读取全部配置，
+通过 lru_cache 单例模式避免重复解析。
+"""
+
 from functools import lru_cache
 from pathlib import Path
 

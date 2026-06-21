@@ -1,3 +1,10 @@
+"""云端智能体对话接口。
+
+POST /api/agent/chat → 自由对话（含日志意图识别）
+GET  /api/agent/scan → 隐患扫描报告
+GET  /api/agent/tools → 可用工具列表
+"""
+
 from fastapi import APIRouter, Query
 
 from backend.cloud_api.dependencies import get_agent

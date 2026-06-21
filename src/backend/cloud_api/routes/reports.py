@@ -1,3 +1,9 @@
+"""日报生成接口。
+
+GET /api/reports/daily → 返回当日 JSON 或 Markdown 检测报告，
+包含事件统计、风险分布和隐患扫描结果。
+"""
+
 from datetime import date, datetime, timezone
 from typing import Any
 

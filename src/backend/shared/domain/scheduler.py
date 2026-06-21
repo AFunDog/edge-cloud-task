@@ -1,3 +1,9 @@
+"""边云任务调度器。
+
+基于关键词匹配判断任务复杂度：简单任务留在边端，
+复杂任务（语义分析/报告生成等）转发云端 Agent。
+"""
+
 from backend.shared.domain.models import ExecutionTarget, ScheduleDecision, TaskComplexity, TaskRequest
 
 

@@ -1,3 +1,9 @@
+"""边端、云端和管理平台之间的统一数据契约。
+
+本模块定义所有跨层共享的 Pydantic 模型，覆盖检测、姿态、
+事件、分析和调度等领域的请求与响应结构。
+"""
+
 from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4

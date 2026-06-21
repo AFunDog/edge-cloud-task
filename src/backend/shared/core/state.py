@@ -1,3 +1,9 @@
+"""线程安全的运行时状态缓存。
+
+使用 deque+Lock 实现边端检测结果、事件和分析结果的内存存储，
+支持云端多路由并发读写。所有写入操作均为幂等。
+"""
+
 from collections import deque
 from datetime import datetime, timezone
 from threading import Lock

@@ -1,3 +1,9 @@
+"""运行时日志查询与隐患扫描工具。
+
+基于 RuntimeState 中的事件和分析结果提供历史查询、
+汇总统计和 5 类隐患自动检测，输出可直接拼入 LLM prompt 的格式化文本。
+"""
+
 from datetime import datetime, timedelta, timezone
 
 from backend.shared.core.state import runtime_state

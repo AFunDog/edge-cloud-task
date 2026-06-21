@@ -1,3 +1,13 @@
+"""云端事件管理接口。
+
+POST   /api/events          → 接收边端事件
+GET    /api/events          → 事件列表
+GET    /api/events/search   → 全文检索
+POST   /api/events/analyze  → Agent 深度分析
+GET    /api/events/analysis → 分析结果列表
+GET    /api/events/{id}/report → 单事件 Markdown 报告
+"""
+
 from datetime import datetime, timezone
 import logging
 

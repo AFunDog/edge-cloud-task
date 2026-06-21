@@ -1,3 +1,9 @@
+"""边端检测→分析→调度→同步的编排流水线。
+
+EdgePipeline 是边端处理的核心，负责串联姿态分析、事件分析、
+调度决策和云端同步，生成完整的 EdgeCycle 结果。
+"""
+
 from __future__ import annotations
 
 import time

@@ -1,3 +1,9 @@
+"""边端采集器 —— 摄像头→检测→同步的主循环。
+
+在独立线程中运行，负责摄像头帧采集、YOLO 检测调度、
+WebRTC 视频推送、WebSocket 状态广播和云端同步。
+"""
+
 from __future__ import annotations
 
 import asyncio

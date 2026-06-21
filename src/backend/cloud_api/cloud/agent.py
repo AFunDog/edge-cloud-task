@@ -1,3 +1,9 @@
+"""云端智能体 —— 系统的分析决策中心。
+
+编排 LLM、搜索、知识库和日志查询四个工具，
+提供对话、事件分析和隐患扫描三种核心能力。
+"""
+
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
 from backend.cloud_api.cloud.log_query import LogQueryTool
@@ -19,6 +25,14 @@ _LOG_KEYWORDS = [
 
 
 class CloudAgent:
+    """云端智能体：编排 LLM、搜索、知识库和日志查询。
+
+    提供三种核心能力：
+    - answer(): 自由对话，自动识别日志查询意图
+    - analyze_event(): 安全事件深度分析（含视觉输入）
+    - scan(): 隐患扫描，返回结构化报告
+    """
+
     def __init__(
         self,
         llm: LLMClient,

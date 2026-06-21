@@ -1,3 +1,9 @@
+"""大模型客户端抽象层。
+
+支持 mock(测试)、openai 和 openai-compatible 三种模式。
+视觉模型通过 content 数组传递 base64 编码图像。
+"""
+
 import json
 
 import httpx

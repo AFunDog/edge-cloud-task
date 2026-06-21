@@ -14,6 +14,12 @@ class PoseDecision:
 
 
 class PoseAnalyzer:
+    """基于 COCO 17 关键点的规则化姿态分类器。
+
+    根据人体关键点的几何关系判断 9 种姿态动作，
+    低置信度或关键点稀疏时标记 needs_cloud 转云端复核。
+    """
+    confidence_threshold = 0.58
     confidence_threshold = 0.58
     keypoint_threshold = 0.35
     upper_body_confidence_threshold = 0.42
