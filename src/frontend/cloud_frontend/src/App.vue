@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { fetchEventReport, fetchState, scheduleTask, sendAgentChat } from './api'
+import { fetchEventReport, fetchState, scanHazards, scheduleTask, sendAgentChat } from './api'
 import type {
   CloudAnalysisResponse,
   Detection,
@@ -27,6 +27,8 @@ const deviceId = ref('edge-camera-01')
 const taskText = ref('姿态识别')
 const chatResult = ref<any>(null)
 const scheduleResult = ref<any>(null)
+const scanResult = ref<any>(null)
+const scanning = ref(false)
 const selectedReport = ref<EventReport | null>(null)
 const reportError = ref('')
 const stageRef = ref<HTMLElement | null>(null)
@@ -68,6 +70,23 @@ async function submitSchedule(): Promise<void> {
     })
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : String(exc)
+  }
+}
+
+function quickQuery(question: string): void {
+  chatQuestion.value = question
+  submitChat()
+}
+
+async function submitScan(): Promise<void> {
+  try {
+    error.value = ''
+    scanning.value = true
+    scanResult.value = await scanHazards()
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : String(exc)
+  } finally {
+    scanning.value = false
   }
 }
 
@@ -526,8 +545,17 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
             <input class="field-input" v-model="deviceId" type="text" />
           </div>
           <div class="field">
+            <label class="field-label">快捷查询</label>
+            <div class="quick-chips">
+              <button type="button" class="chip-btn" @click="quickQuery('最近24小时有哪些异常事件？')">24h 异常</button>
+              <button type="button" class="chip-btn" @click="quickQuery('分析当前的隐患趋势')">隐患分析</button>
+              <button type="button" class="chip-btn" @click="quickQuery('统计各类型事件的分布情况')">事件统计</button>
+              <button type="button" class="chip-btn" @click="submitScan" :disabled="scanning">{{ scanning ? '扫描中...' : '隐患扫描' }}</button>
+            </div>
+          </div>
+          <div class="field">
             <label class="field-label">问题</label>
-            <textarea class="field-textarea" v-model="chatQuestion" rows="5"></textarea>
+            <textarea class="field-textarea" v-model="chatQuestion" rows="4"></textarea>
           </div>
           <button class="btn btn-primary" type="button" @click="submitChat">发送到云端智能体</button>
           <div style="height:1px;background:var(--border);margin:4px 0"></div>
@@ -539,6 +567,21 @@ function analysisFor(event: SafetyEvent): CloudAnalysisResponse | undefined {
         </div>
 
         <div class="settings-results">
+          <div v-if="scanResult" class="result-block">
+            <div class="result-tag">隐患扫描报告</div>
+            <div v-if="scanResult.hazards?.length" class="scan-hazards">
+              <div v-for="(h, i) in scanResult.hazards" :key="i" class="scan-item" :class="h.severity">
+                <span class="risk-chip" :class="h.severity">{{ h.severity }}</span>
+                <strong>{{ h.type }}</strong>
+                <span class="scan-count">{{ h.count }} 条</span>
+                <p>{{ h.suggestion }}</p>
+              </div>
+            </div>
+            <div v-else class="scan-clean">未发现明显隐患，系统运行正常。</div>
+            <div v-if="scanResult.summary" class="scan-summary">
+              统计：{{ scanResult.summary.total ?? 0 }} 条事件（过去 {{ scanResult.summary.period_hours ?? '--' }}h）
+            </div>
+          </div>
           <div v-if="chatResult" class="result-block">
             <div class="result-tag">智能体回复</div>
             <div class="result-body">{{ chatResult.answer }}</div>

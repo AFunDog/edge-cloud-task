@@ -1,5 +1,6 @@
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
+from backend.cloud_api.cloud.log_query import LogQueryTool
 from backend.cloud_api.cloud.search import SearchTool
 from backend.shared.domain.models import (
     AgentRequest,
@@ -10,32 +11,93 @@ from backend.shared.domain.models import (
     EventSeverity,
 )
 
+_LOG_KEYWORDS = [
+    "历史", "日志", "过去", "最近", "异常", "统计", "汇总",
+    "趋势", "隐患", "扫描", "检查", "分析日志", "事件记录",
+    "多少", "几次", "多少次", "哪些",
+]
+
 
 class CloudAgent:
-    def __init__(self, llm: LLMClient, search_tool: SearchTool, knowledge_base: KnowledgeBase) -> None:
+    def __init__(
+        self,
+        llm: LLMClient,
+        search_tool: SearchTool,
+        knowledge_base: KnowledgeBase,
+        log_query: LogQueryTool | None = None,
+    ) -> None:
         self.llm = llm
         self.search_tool = search_tool
         self.knowledge_base = knowledge_base
+        self.log_query = log_query or LogQueryTool()
 
     def answer(self, request: AgentRequest) -> AgentResponse:
+        log_context = self._build_log_context(request.question)
         knowledge_hits = self.knowledge_base.search(request.question)
         search_hits = self.search_tool.search(request.question)
-        prompt = self._build_prompt(request, knowledge_hits, search_hits)
+        prompt = self._build_prompt(request, knowledge_hits, search_hits, log_context)
         answer = self.llm.generate(prompt)
         traces = [
             f"knowledge_hits={len(knowledge_hits)}",
             f"search_hits={len(search_hits)}",
+            f"log_query={log_context is not None}",
             f"context_keys={','.join(request.context.keys()) or 'none'}",
         ]
         if knowledge_hits:
             traces.extend(f"knowledge: {hit}" for hit in knowledge_hits)
         traces.extend(f"search: {hit}" for hit in search_hits)
+        if log_context:
+            traces.append(f"log_events={log_context.get('event_count', 0)}")
         return AgentResponse(
             answer=answer,
             used_search=bool(search_hits),
             used_knowledge=bool(knowledge_hits),
             traces=traces,
         )
+
+    def scan(self, hours_back: int = 168) -> dict:
+        summary = self.log_query.summarize(hours_back=hours_back)
+        hazards = self.log_query.scan_hazards(hours_back=hours_back)
+        recent_events = self.log_query.query_events(hours_back=hours_back, limit=20)
+        return {
+            "summary": summary,
+            "hazards": hazards,
+            "recent_events": [
+                {
+                    "event_id": e.event_id,
+                    "event_type": e.event_type,
+                    "severity": e.severity.value,
+                    "status": e.status.value,
+                    "summary": e.summary,
+                    "created_at": e.created_at.isoformat(),
+                }
+                for e in recent_events
+            ],
+        }
+
+    def _build_log_context(self, question: str) -> dict | None:
+        if not any(keyword in question for keyword in _LOG_KEYWORDS):
+            return None
+        hours = 24
+        if "周" in question or "星期" in question:
+            hours = 168
+        elif "月" in question:
+            hours = 720
+        elif "天" in question or "日" in question:
+            hours = 24
+        elif "时" in question and "小" in question:
+            import re
+            match = re.search(r"(\d+)\s*小?时", question)
+            if match:
+                hours = int(match.group(1))
+        summary = self.log_query.summarize(hours_back=hours)
+        events = self.log_query.query_events(hours_back=hours, limit=15)
+        return {
+            "hours": hours,
+            "summary": summary,
+            "events_text": self.log_query.format_events_for_prompt(events),
+            "event_count": summary["total"],
+        }
 
     def analyze_event(self, request: CloudAnalysisRequest) -> CloudAnalysisResponse:
         query = self._event_query(request)
@@ -83,17 +145,32 @@ class CloudAgent:
             traces=traces,
         )
 
-    def _build_prompt(self, request: AgentRequest, knowledge_hits: list[str], search_hits: list[str]) -> str:
-        return "\n".join(
-            [
-                "请结合边端检测上下文、知识库和搜索结果，输出：1. 场景理解；2. 风险判断；3. 边云调度建议；4. 后续操作。",
-                f"问题：{request.question}",
-                f"设备：{request.device_id or 'web-console'}",
-                f"上下文：{request.context}",
-                f"知识库：{knowledge_hits}",
-                f"搜索：{search_hits}",
-            ]
-        )
+    def _build_prompt(
+        self,
+        request: AgentRequest,
+        knowledge_hits: list[str],
+        search_hits: list[str],
+        log_context: dict | None = None,
+    ) -> str:
+        parts = [
+            "你是机房/实验室边云协同安全监测系统的云端智能体。",
+            "请结合边端检测上下文、知识库、搜索和日志数据，输出：1. 场景理解；2. 风险判断；3. 数据洞察；4. 后续建议。",
+            f"问题：{request.question}",
+            f"设备：{request.device_id or 'web-console'}",
+            f"上下文：{request.context}",
+        ]
+        if log_context:
+            parts.extend([
+                "--- 历史日志摘要 ---",
+                self.log_query.format_summary_for_prompt(log_context["summary"]),
+                "--- 最近事件 ---",
+                log_context["events_text"],
+            ])
+        parts.extend([
+            f"知识库：{knowledge_hits}",
+            f"搜索：{search_hits}",
+        ])
+        return "\n".join(parts)
 
     def _build_event_prompt(
         self,

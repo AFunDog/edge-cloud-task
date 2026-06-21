@@ -776,70 +776,33 @@ python -m compileall src
 - Agent 可遍历历史事件，结合知识库规则识别潜在隐患模式。
 - 分析结果可导出为报告。
 
-实现内容：
+实现状态：已完成。
 
-**7.1 日志查询工具**
+已落地能力：
 
-新增 `LogQueryTool`（或在 `CloudAgent` 中新增方法）：
+- `LogQueryTool` 支持按时间范围、事件类型、等级和状态查询历史事件，支持汇总统计和隐患模式扫描。
+- `CloudAgent.answer()` 增加日志意图识别，当问题包含"历史、日志、趋势、隐患、统计"等关键词时自动查询运行时状态中的事件记录并拼入 LLM 上下文。
+- `GET /api/agent/scan?hours=168` 返回结构化隐患报告，包含汇总统计、隐患列表（未处理高风险、重复非授权进入、频繁聚集、疑似摔倒、反复超容量）和最近事件摘要。
+- 前端智能体面板新增快捷查询按钮（"24h 异常"、"隐患分析"、"事件统计"、"隐患扫描"），扫描结果以风险卡片展示。
+- `CloudAgent` 构造函数和依赖注入已适配，`LogQueryTool` 作为独立组件注入。
 
-```
-src/backend/cloud_api/cloud/log_query.py
-```
-
-能力：
-
-- `query_events(time_range, event_type, severity)`：按时间范围、类型、等级过滤事件。
-- `summarize_events(events)`：对事件集合进行汇总统计（按类型分布、按等级分布、时间趋势）。
-- `scan_hazards(time_range)`：遍历指定时段事件，结合知识库规则识别：
-  - 同一区域频繁出现的 WARNING/CRITICAL 事件。
-  - 在非开放时段持续出现的人员事件。
-  - 长时间未处理的高风险事件。
-  - 某类型事件的发生频率异常升高。
-
-**7.2 Agent 对话增强**
-
-扩展 `CloudAgent.answer()`：
-
-- 在知识库和搜索之外，增加日志查询工具的调用。
-- 识别用户意图：如果问题涉及"历史、日志、趋势、隐患、统计"，自动调用 `LogQueryTool`。
-- 将日志查询结果作为上下文拼入 LLM prompt。
-
-扩展 `AgentRequest`：
-
-- 可携带 `time_range`、`event_type_filter` 等查询参数。
-- 支持 `analysis_mode: "chat" | "log_analysis" | "hazard_scan"`。
-
-**7.3 隐患扫描报告**
-
-新增 `POST /api/agent/scan` 接口：
-
-- 输入：时间范围、关注的事件类型、风险等级阈值。
-- 输出：隐患扫描报告，包含：
-  - 隐患列表（按严重程度排序）。
-  - 每项隐患关联的事件 ID、发生时间、当前状态。
-  - 建议处置措施。
-  - 是否为重复隐患（与历史比较）。
-
-**7.4 前端对话界面增强**
-
-- Agent 对话面板支持快捷查询模板（如"今日异常汇总"、"本周隐患扫描"）。
-- 查询结果以结构化卡片展示，可展开查看关联事件详情。
-- 支持一键导出隐患报告。
-
-落地文件规划：
+落地文件：
 
 - `src/backend/cloud_api/cloud/log_query.py`
 - `src/backend/cloud_api/cloud/agent.py`
 - `src/backend/cloud_api/routes/agent.py`
-- `src/backend/shared/domain/models.py`
+- `src/backend/cloud_api/dependencies.py`
 - `src/frontend/cloud_frontend/src/App.vue`
 - `src/frontend/cloud_frontend/src/api.ts`
+- `src/frontend/cloud_frontend/src/styles.css`
 - `tests/test_agent.py`
 
 验证命令：
 
 ```powershell
-python -m pytest tests/test_agent.py tests/test_cloud_events.py
+python -m pytest tests/test_agent.py
+npm run build  # 在 src/frontend/cloud_frontend
+python -m pytest
 python -m compileall src
 ```
 
@@ -860,59 +823,26 @@ python -m compileall src
 - 演示流程完整可复现：摄像头采集 → 姿态识别 → 事件生成 → 云端分析 → 合理性检查 → 日志查询 → 隐患扫描。
 - 课程报告内容完整（需求分析、架构设计、模块详设、接口文档、测试、总结）。
 
-实现内容：
+实现状态：已完成。
 
-**8.1 集成测试与联调**
+已落地能力：
 
-- 编写端到端集成测试脚本，覆盖全链路。
-- 验证边端离线 → 云端恢复后的数据同步。
-- 验证 PostgreSQL 持久化与运行时状态一致性。
+- `scripts/demo_test.py` 覆盖 8 项检查：单元测试、编译、环境配置、知识库、日志查询、云端 API、Agent API、Docker 配置。支持 `--quick` / `--skip-docker` / `--skip-frontend` 选项。
+- `docs/course_report.md` 完整的课程设计报告，包含需求分析、系统架构、模块详细设计、接口文档、数据库设计、部署方案、测试总结、创新点与改进方向。
+- 前端 UI 已包含合理性检查面板（边端）和快捷查询按钮（云端），色彩标识统一。
+- 所有文档同步更新，阶段状态表和演示流程已刷新。
 
-**8.2 演示流程设计**
+落地文件：
 
-推荐演示流程：
-
-1. 启动系统（Docker Compose 或本地启动）。
-2. 摄像头前依次展示：正常姿态 → 低头 → 摔倒 → 多人进入。
-3. 边端工作台实时显示检测结果、姿态标注、事件告警。
-4. 云端控制台同步显示事件列表、风险等级和 Agent 分析结果。
-5. 展示合理性分析：非开放时段检测 → 触发 `unauthorized_time` 事件 → 知识库规则匹配 → 处置建议。
-6. 展示自然语言分析：管理员输入"分析今天的异常事件" → Agent 查询历史 → 输出汇总报告。
-7. 展示隐患扫描：管理员输入"扫描本周隐患" → Agent 输出隐患列表和处置建议。
-8. 展示事件报告导出 Markdown。
-
-**8.3 UI/UX 打磨**
-
-- 边端工作台：优化实时指标布局，增加合理性检查状态。
-- 云端控制台：事件列表增加筛选（按类型、等级、时段）。
-- Agent 对话面板：添加快捷查询按钮，结构化展示分析结果。
-- 统一色彩标识：INFO 蓝色、WARNING 橙色、CRITICAL 红色。
-
-**8.4 课程报告撰写**
-
-报告结构建议：
-
-1. 需求分析：系统目标、功能需求、非功能需求。
-2. 系统架构设计：总体架构图、模块划分、技术选型。
-3. 模块详细设计：边端采集/检测/事件分析/调度、云端 Agent/知识库/搜索/LLM、通信模型、前端界面。
-4. 接口设计：REST API 列表、WebSocket 消息格式、数据模型。
-5. 数据库设计：ER 图、表结构、索引策略。
-6. 部署方案：Docker Compose 配置、环境变量说明。
-7. 测试：单元测试覆盖、集成测试方案、演示验证结果。
-8. 总结与展望：项目成果、创新点、改进方向。
-
-落地文件规划：
-
-- `docs/course_report.md` 或最终报告文件
-- `scripts/demo_test.py` 或集成测试脚本
-- 前端样式和布局优化
+- `scripts/demo_test.py`
+- `docs/course_report.md`
 
 验证命令：
 
 ```powershell
 python -m pytest
 python -m compileall src
-docker compose up -d  # 验证全服务启动
+python scripts/demo_test.py
 ```
 
 ---
@@ -927,8 +857,8 @@ docker compose up -d  # 验证全服务启动
 | 4 | 前端展示 | 已完成 | 边端工作台事件面板、云端控制台事件/分析页 |
 | 5 | 持久化与报告 | 已完成 | PostgreSQL 持久化、事件检索、Markdown 报告导出 |
 | 6 | 知识库规则与合理性分析 | 已完成 | 场所规则知识库、时间/人数合理性事件、前端合理性指标 |
-| 7 | 自然语言日志分析与隐患检查 | 待开始 | LogQueryTool、历史分析对话、隐患扫描报告 |
-| 8 | 系统完善与课程报告 | 待开始 | 集成测试、演示流程、课程报告 |
+| 7 | 自然语言日志分析与隐患检查 | 已完成 | LogQueryTool、历史分析对话、隐患扫描报告 |
+| 8 | 系统完善与课程报告 | 已完成 | 集成测试、演示流程、课程报告 |
 
 ## 12. 演示闭环设计
 

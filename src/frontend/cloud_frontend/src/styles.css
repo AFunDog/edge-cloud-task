@@ -930,6 +930,90 @@ input, textarea { font: inherit; color: inherit; }
   line-height: 1.7;
 }
 
+.quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-btn {
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chip-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scan-hazards {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.scan-item {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.scan-item.high {
+  border-color: rgba(255, 122, 122, 0.28);
+  background: rgba(255, 122, 122, 0.045);
+}
+
+.scan-item.medium {
+  border-color: rgba(255, 192, 106, 0.25);
+}
+
+.scan-item strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.scan-item p {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.scan-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.scan-clean {
+  padding: 12px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.scan-summary {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 .trace-list {
   margin-top: 10px;
   padding-left: 16px;

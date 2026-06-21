@@ -40,3 +40,11 @@ export function scheduleTask(payload: TaskRequest): Promise<ScheduleDecision> {
 export function fetchEventReport(eventId: string): Promise<EventReport> {
   return request<EventReport>(`/api/events/${encodeURIComponent(eventId)}/report`)
 }
+
+export function scanHazards(hours: number = 168): Promise<{
+  summary: Record<string, unknown>
+  hazards: Array<Record<string, unknown>>
+  recent_events: Array<Record<string, unknown>>
+}> {
+  return request(`/api/agent/scan?hours=${hours}`)
+}

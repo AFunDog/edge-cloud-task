@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta, timezone
+
 from backend.cloud_api.cloud.agent import CloudAgent
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
+from backend.cloud_api.cloud.log_query import LogQueryTool
 from backend.cloud_api.cloud.search import SearchTool
+from backend.shared.core.state import runtime_state
 from backend.shared.domain.models import (
     AgentRequest,
     CloudAnalysisRequest,
@@ -108,3 +112,81 @@ def test_agent_handles_excessive_people_event() -> None:
     assert response.risk_level is EventSeverity.WARNING
     assert response.conclusion
     assert any("分流" in s or "疏导" in s for s in response.suggestions)
+
+
+def test_log_query_summarizes_events() -> None:
+    tool = LogQueryTool()
+    runtime_state.add_event(SafetyEvent(
+        event_type="fall_suspected",
+        device_id="edge-1",
+        severity=EventSeverity.CRITICAL,
+        status=EventStatus.CLOUD_PENDING,
+        summary="test fall",
+        created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    ))
+    runtime_state.add_event(SafetyEvent(
+        event_type="long_head_down",
+        device_id="edge-1",
+        severity=EventSeverity.WARNING,
+        status=EventStatus.CLOUD_ANALYZED,
+        summary="test head down",
+        created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    ))
+    runtime_state.add_event(SafetyEvent(
+        event_type="unauthorized_time",
+        device_id="edge-1",
+        severity=EventSeverity.WARNING,
+        status=EventStatus.CLOUD_PENDING,
+        summary="test unauthorized",
+        created_at=datetime.now(timezone.utc) - timedelta(hours=3),
+    ))
+
+    summary = tool.summarize(hours_back=24)
+    assert summary["total"] >= 3
+    assert "critical" in summary["by_severity"] or "warning" in summary["by_severity"]
+    assert "fall_suspected" in summary["by_type"]
+
+
+def test_log_query_filters_by_type() -> None:
+    tool = LogQueryTool()
+    events = tool.query_events(hours_back=24, event_type="fall_suspected")
+    assert all(e.event_type == "fall_suspected" for e in events)
+
+
+def test_log_query_scan_detects_falls() -> None:
+    tool = LogQueryTool()
+    hazards = tool.scan_hazards(hours_back=24)
+    hazard_types = [h["type"] for h in hazards]
+    assert "fall_events" in hazard_types or "unhandled_critical" in hazard_types
+
+
+def test_agent_handles_log_analysis_question() -> None:
+    agent = CloudAgent(LLMClient(), SearchTool(), KnowledgeBase(root="data/knowledge"))
+    response = agent.answer(AgentRequest(
+        question="过去24小时有哪些异常事件？",
+        device_id="web-console",
+    ))
+    assert response.answer
+    assert any("log_query" in trace and "True" in trace for trace in response.traces)
+
+
+def test_agent_scan_returns_structure() -> None:
+    agent = CloudAgent(LLMClient(), SearchTool(), KnowledgeBase(root="data/knowledge"))
+    result = agent.scan(hours_back=24)
+    assert "summary" in result
+    assert "hazards" in result
+    assert "recent_events" in result
+    assert isinstance(result["hazards"], list)
+    assert isinstance(result["recent_events"], list)
+
+
+def test_format_functions() -> None:
+    tool = LogQueryTool()
+    empty_events = tool.format_events_for_prompt([])
+    assert "无匹配" in empty_events
+
+    empty_hazards = tool.format_hazards_for_prompt([])
+    assert "未发现" in empty_hazards or "无" in empty_hazards
+
+    empty_summary = tool.format_summary_for_prompt({"total": 0, "by_type": {}, "by_severity": {}, "by_status": {}, "trend": "无", "period_hours": 24})
+    assert "总数" in empty_summary

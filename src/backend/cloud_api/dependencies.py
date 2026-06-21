@@ -4,6 +4,7 @@ from backend.cloud_api.cloud.agent import CloudAgent
 from backend.cloud_api.cloud.event_repository import CloudEventRepository
 from backend.cloud_api.cloud.knowledge import KnowledgeBase
 from backend.cloud_api.cloud.llm import LLMClient
+from backend.cloud_api.cloud.log_query import LogQueryTool
 from backend.cloud_api.cloud.search import SearchTool
 from backend.shared.core.config import get_settings
 
@@ -24,6 +25,7 @@ def get_agent() -> CloudAgent:
             api_key=settings.search_api_key,
         ),
         knowledge_base=KnowledgeBase(settings.knowledge_dir),
+        log_query=LogQueryTool(),
     )
 
 

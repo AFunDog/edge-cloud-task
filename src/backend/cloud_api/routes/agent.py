@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from backend.cloud_api.dependencies import get_agent
 from backend.shared.core.state import runtime_state
@@ -26,10 +26,19 @@ def chat(request: AgentRequest) -> AgentResponse:
     return response
 
 
+@router.get("/scan")
+def scan_hazards(
+    hours: int = Query(default=168, ge=1, le=720, description="扫描时间范围（小时），默认 168（7天）"),
+) -> dict:
+    return get_agent().scan(hours_back=hours)
+
+
 @router.get("/tools")
 def tools() -> dict:
     return {
         "llm": "configurable",
         "search": "local-or-provider-adapter",
         "knowledge_base": "local-text-knowledge-base",
+        "log_query": "runtime-state-log-query",
+        "hazard_scan": "available-at-/api/agent/scan",
     }
