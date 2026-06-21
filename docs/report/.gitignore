@@ -1,18 +1,13 @@
-*.bib
-*.bst
-*.sty
+# 编译产物 (不提交)
 *.aux
 *.log
-*.pdf
-*.gz
-*.synctex
-*.toc
-*.eps
-*.png
 *.out
-*.latexmkrc
+*.toc
 *.bbl
+*.blg
 *.fdb_latexmk
 *.fls
 *.xdv
-*.blg
+*.synctex*
+*.gz
+*.pdf
