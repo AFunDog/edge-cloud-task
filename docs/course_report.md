@@ -130,7 +130,7 @@
 | 状态推送 | WebSocket | 全双工实时更新 |
 | 大模型 | 阿里百炼 DashScope | OpenAI 兼容接口，qwen3-vl-plus 视觉理解 |
 | 数据库 | PostgreSQL + pgvector | 成熟的关系型 + 向量检索 |
-| 前端 | Vue3 + TypeScript + Vite | 现代响应式框架，类型安全 |
+| 前端 | Vue3 + TypeScript + Vite + Vue Router | 现代响应式框架，类型安全，支持独立页面路由 |
 | 容器化 | Docker Compose | 一键部署，服务隔离 |
 | 测试 | pytest | Python 标准测试框架 |
 
@@ -264,6 +264,8 @@
 
 #### 边端工作台 (`frontend/edge_frontend/`)
 
+边端前端采用 Vue Router 拆分为独立页面：`MonitorView.vue` 负责实时视频、检测框、姿态骨架和右侧运行态面板；`PoseView.vue` 负责姿态识别和合理性状态汇总；`LogsView.vue` 负责事件、云端分析和任务日志。顶层 `App.vue` 只保留导航壳、连接状态和 `RouterView`。
+
 | 面板 | 功能 |
 |------|------|
 | 实时视频 | WebRTC 视频流 + YOLO 检测框/关键点/骨架叠加 |
@@ -274,6 +276,8 @@
 | 边端日志 | 任务调度日志列表 |
 
 #### 云端控制台 (`frontend/cloud_frontend/`)
+
+云端前端同样采用 Vue Router 拆分为独立页面：`MonitorView.vue` 负责实时监控和边云摘要；`EventsView.vue` 负责事件列表、分析结果和日报；`AgentView.vue` 负责智能体对话、隐患扫描和调度预测；`LogsView.vue` 负责任务日志；`KnowledgeView.vue` 负责知识库文件浏览与编辑。监控页使用 `KeepAlive` 缓存，切换页面后返回时复用已有 WebRTC 媒体流，不强制关闭并重建连接。
 
 | 面板 | 功能 |
 |------|------|

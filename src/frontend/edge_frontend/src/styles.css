@@ -120,7 +120,8 @@ button {
   background: var(--bg-card);
 }
 
-.tab-btn.active {
+.tab-btn.active,
+.tab-btn.router-link-active {
   color: var(--text);
   background: var(--bg-card-hover);
 }

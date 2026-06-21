@@ -38,7 +38,7 @@
 
 ### 前端 Frontend
 
-`src/frontend/cloud_frontend/` 使用 Vite + Vue3 + TypeScript 实现云端控制台，负责系统概览、任务日志和智能体对话视图。`src/frontend/edge_frontend/` 使用 Vite + Vue3 + TypeScript 实现边端工作台，负责实时画面、姿态动作和本地任务调度展示。两套前端分别通过 `/api` 访问云端服务与边端服务，生产环境可由 Nginx 分别反向代理到对应 FastAPI。
+`src/frontend/cloud_frontend/` 使用 Vite + Vue3 + TypeScript + Vue Router 实现云端控制台，页面按 `views/MonitorView.vue`、`EventsView.vue`、`AgentView.vue`、`LogsView.vue`、`KnowledgeView.vue` 拆分。`src/frontend/edge_frontend/` 使用同样技术栈实现边端工作台，页面按 `views/MonitorView.vue`、`PoseView.vue`、`LogsView.vue` 拆分。两套前端的 `App.vue` 仅保留顶栏、状态指示和 `RouterView`，监控页通过 `KeepAlive` 保持 WebRTC `<video>` 节点和检测叠加层状态；切回监控页时优先恢复已有 `srcObject` 播放，只有连接断开或媒体对象丢失时才重新建联，避免切页返回出现黑屏重连等待。两套前端分别通过 `/api` 访问云端服务与边端服务，生产环境可由 Nginx 分别反向代理到对应 FastAPI。
 
 ## 数据流
 
@@ -47,7 +47,7 @@
 3. 对姿态任务，边端优先用规则算法输出基础动作结果；若匹配不到合理姿态，则自动调度到云端复核。
 4. 本地检测结果和任务日志立即写入边端状态并通过 WebSocket 展示；后台同步线程再上传云端，网络延迟不阻塞本地实时链路。
 5. 复杂任务由云端 Agent 结合知识库、搜索工具和 LLM 生成分析；Agent 调用带冷却时间，避免视频帧触发高频调用。
-6. 边端前端读取边端实时状态，展示资源概况、检测框、姿态动作和任务日志；云端前端展示汇总后的边端状态、任务日志和智能体回答。
+6. 边端前端读取边端实时状态，展示资源概况、检测框、姿态动作和任务日志；云端前端展示汇总后的边端状态、任务日志和智能体回答。监控页是独立路由组件，切换到其他页面不会主动关闭 WebRTC 流，返回时恢复播放并复用现有检测数据。
 7. PostgreSQL 当前作为独立基础设施运行，暂不承载展示数据；后续可用于任务日志持久化、知识片段存储和向量检索。
 
 ## 扩展点

@@ -860,6 +860,22 @@ python scripts/demo_test.py
 | 7 | 自然语言日志分析与隐患检查 | 已完成 | LogQueryTool、历史分析对话、隐患扫描报告 |
 | 8 | 系统完善、日报与课程报告 | 已完成 | 集成测试、日报接口、演示流程、课程报告 |
 
+## 11.1 前端路由结构同步
+
+前端页面结构已从单文件条件渲染调整为 Vue Router 路由视图：
+
+- 云端控制台：`src/frontend/cloud_frontend/src/router/index.ts` 管理 `/`、`/events`、`/agent`、`/logs`、`/knowledge`，对应 `views/MonitorView.vue`、`EventsView.vue`、`AgentView.vue`、`LogsView.vue`、`KnowledgeView.vue`。
+- 边端工作台：`src/frontend/edge_frontend/src/router/index.ts` 管理 `/`、`/pose`、`/logs`，对应 `views/MonitorView.vue`、`PoseView.vue`、`LogsView.vue`。
+- 两个 `App.vue` 只保留顶栏、连接状态和 `RouterView`，业务页面放到独立 view 文件。
+- 监控页通过 `KeepAlive` 缓存，切换到其他页面后返回时优先恢复已有 WebRTC `srcObject` 播放；只有连接断开或媒体对象丢失时才重新建联，避免页面返回时黑屏等待重连。
+
+验证命令：
+
+```powershell
+cd src\frontend\cloud_frontend && npm run build
+cd src\frontend\edge_frontend && npm run build
+```
+
 ## 12. 演示闭环设计
 
 推荐最终演示流程：

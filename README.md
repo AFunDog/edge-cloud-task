@@ -10,8 +10,8 @@ src/backend/
   edge_api/       边端 FastAPI (采集/检测/姿态/事件/WebRTC)
   shared/         共享层 (模型/配置/状态/调度)
 src/frontend/
-  cloud_frontend/ 云端控制台 (监控/事件/智能体/日报)
-  edge_frontend/  边端工作台 (视频/检测框/姿态骨架/事件/合理性)
+  cloud_frontend/ 云端控制台 (Vue Router: 监控/事件/智能体/日志/知识库)
+  edge_frontend/  边端工作台 (Vue Router: 监控/姿态/日志)
 docs/             设计文档与课程报告
 tests/            54 个单元测试
 scripts/          模型下载 / 集成测试
@@ -60,6 +60,7 @@ cd src\frontend\edge_frontend && npm install && npm run dev    # :5174
 | 日报报告 | 每日检测报告 JSON + Markdown，支持下载 |
 | 持久化 | PostgreSQL 持久化 + 启动恢复 + 全文检索 |
 | 视频流 | WebRTC 实时推送 + WebSocket 状态广播 |
+| 前端路由 | 云端/边端均使用 Vue Router；监控页 KeepAlive，切页返回复用已有 WebRTC 流 |
 | Docker | 6 服务一键部署 (`docker compose up -d`) |
 
 ## 配置

@@ -97,7 +97,8 @@ input, textarea { font: inherit; color: inherit; }
 }
 
 .tab-btn:hover { color: var(--text-2); background: var(--bg-card); }
-.tab-btn.active { color: var(--text); background: var(--bg-card-hover); }
+.tab-btn.active,
+.tab-btn.router-link-active { color: var(--text); background: var(--bg-card-hover); }
 
 .topbar-right {
   display: flex;
