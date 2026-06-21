@@ -35,6 +35,7 @@ class EdgeCollector:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._detector: YoloDetector | None = None
+        self._camera: Any = None
         self._pipeline = EdgePipeline(
             task=settings.edge_task,
             cloud_client=CloudClient(settings.cloud_api_base_url),
@@ -51,13 +52,15 @@ class EdgeCollector:
                 )
             ),
         )
-        self._detection_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-detection")
-        self._cloud_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge-cloud-sync")
-        self._detector_future: concurrent.futures.Future[YoloDetector] | None = None
-        self._detection_future: concurrent.futures.Future[EdgeCycle] | None = None
-        self._cloud_future: concurrent.futures.Future[None] | None = None
+        self._detection_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="edge-detection",
+        )
+        self._cloud_worker: threading.Thread | None = None
         self._cloud_queue: deque[EdgeCycle] = deque(maxlen=100)
         self._cloud_lock = threading.Lock()
+        self._cloud_idle = threading.Event()
+        self._detector_future: concurrent.futures.Future[YoloDetector] | None = None
+        self._detection_future: concurrent.futures.Future[EdgeCycle] | None = None
         self._video_future: concurrent.futures.Future[None] | None = None
         self.error: str | None = None
         self.running = False
@@ -73,15 +76,24 @@ class EdgeCollector:
             return
         self._loop = loop
         self._stop.clear()
+        self._cloud_idle.clear()
         self._thread = threading.Thread(target=self._run, name="edge-collector", daemon=True)
         self._thread.start()
+        self._cloud_worker = threading.Thread(target=self._run_cloud_worker, name="edge-cloud-worker", daemon=True)
+        self._cloud_worker.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self._camera is not None:
+            try:
+                self._camera.release()
+            except Exception:
+                pass
         if self._thread:
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=3)
         self._detection_pool.shutdown(wait=False, cancel_futures=True)
-        self._cloud_pool.shutdown(wait=False, cancel_futures=True)
+        if self._cloud_worker and self._cloud_worker.is_alive():
+            self._cloud_worker.join(timeout=3)
         self._loop = None
         self.running = False
 
@@ -129,8 +141,12 @@ class EdgeCollector:
             width=self._settings.edge_camera_width,
             height=self._settings.edge_camera_height,
         ) as camera:
+            self._camera = camera._cap
             while not self._stop.is_set():
-                frame = camera.read()
+                try:
+                    frame = camera.read()
+                except RuntimeError:
+                    break
                 now = time.monotonic()
 
                 if now - last_video_at >= video_interval:
@@ -211,28 +227,42 @@ class EdgeCollector:
 
     def _submit_cloud_sync(self, cycle: EdgeCycle) -> None:
         with self._cloud_lock:
-            if self._cloud_future and not self._cloud_future.done():
-                self._cloud_queue.append(cycle)
-                return
-            self._cloud_future = self._cloud_pool.submit(self._sync_cloud_queue, cycle)
+            self._cloud_queue.append(cycle)
+            self._cloud_idle.set()
 
-    def _sync_cloud_queue(self, cycle: EdgeCycle) -> None:
-        current: EdgeCycle | None = cycle
-        while current is not None:
-            self._sync_cloud(current)
+    def _run_cloud_worker(self) -> None:
+        while not self._stop.is_set():
+            self._cloud_idle.wait(timeout=5)
+            self._cloud_idle.clear()
             with self._cloud_lock:
-                current = self._cloud_queue.popleft() if self._cloud_queue else None
-
-    def _sync_cloud(self, cycle: EdgeCycle) -> None:
-        self._pipeline.sync_cloud(cycle)
-        for result in cycle.cloud_analysis_results or []:
-            runtime_state.add_analysis_result(result)
-            self._broadcast({
-                "type": "analysis_result",
-                "data": result.model_dump(mode="json"),
-            })
-        self._pipeline.publish_status(collect_edge_status(cycle.detection.device_id, cycle.detection.fps))
-        self.last_cloud_cycle = cycle
+                if not self._cloud_queue:
+                    continue
+                cycles: list[EdgeCycle] = []
+                while self._cloud_queue:
+                    cycles.append(self._cloud_queue.popleft())
+            for cycle in cycles:
+                if self._stop.is_set():
+                    return
+                try:
+                    self._pipeline.sync_cloud(cycle)
+                    for result in cycle.cloud_analysis_results or []:
+                        runtime_state.add_analysis_result(result)
+                        if self._loop and not self._loop.is_closed():
+                            try:
+                                asyncio.run_coroutine_threadsafe(
+                                    stream_manager.broadcast({
+                                        "type": "analysis_result",
+                                        "data": result.model_dump(mode="json"),
+                                    }), self._loop
+                                )
+                            except RuntimeError:
+                                pass
+                    self._pipeline.publish_status(
+                        collect_edge_status(cycle.detection.device_id, cycle.detection.fps)
+                    )
+                    self.last_cloud_cycle = cycle
+                except Exception:
+                    pass
 
     def _publish_status(self, source_fps: float) -> None:
         status = collect_edge_status(self._settings.edge_device_id, source_fps)

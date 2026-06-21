@@ -1,3 +1,5 @@
+import asyncio
+import threading
 import time
 
 from backend.edge_api.runtime.collector import EdgeCollector
@@ -43,10 +45,19 @@ def test_collector_queues_cloud_sync_when_previous_sync_is_running() -> None:
     pipeline = SlowPipeline()
     collector._pipeline = pipeline  # type: ignore[assignment]
 
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_run_test(collector, loop, pipeline))
+    loop.close()
+
+
+async def _run_test(collector: EdgeCollector, loop: asyncio.AbstractEventLoop, pipeline: SlowPipeline) -> None:
+    collector.start(loop)
+    # Submit two cycles in quick succession
     collector._submit_cloud_sync(_cycle("frame-1"))
     collector._submit_cloud_sync(_cycle("frame-2"))
-
-    collector._cloud_future.result(timeout=2)
-    collector._cloud_pool.shutdown(wait=True)
-
+    # Wait for cloud worker to process them
+    deadline = time.monotonic() + 3
+    while len(pipeline.synced) < 2 and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    collector.stop()
     assert pipeline.synced == ["frame-1", "frame-2"]
