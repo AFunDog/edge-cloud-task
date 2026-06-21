@@ -3,7 +3,7 @@ from backend.shared.domain.scheduler import TaskScheduler
 
 
 def test_simple_detection_stays_on_edge() -> None:
-    decision = TaskScheduler().decide(TaskRequest(task="车辆计数", device_id="edge-1"))
+    decision = TaskScheduler().decide(TaskRequest(task="目标检测", device_id="edge-1"))
     assert decision.target == ExecutionTarget.EDGE
 
 

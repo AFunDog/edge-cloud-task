@@ -17,7 +17,7 @@ from backend.shared.domain.models import DetectionResult
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run one edge detection and scheduling cycle.")
-    parser.add_argument("--task", default="车辆计数", help="任务描述")
+    parser.add_argument("--task", default="姿态识别", help="任务描述")
     parser.add_argument("--offline", action="store_true", help="只在本地运行，不上报云端")
     parser.add_argument("--camera-index", type=int, default=None, help="摄像头索引，默认读取配置")
     parser.add_argument("--camera-width", type=int, default=None, help="请求摄像头输出宽度，默认读取配置")

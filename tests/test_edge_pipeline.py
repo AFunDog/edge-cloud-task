@@ -118,7 +118,7 @@ def test_pipeline_sends_uncertain_pose_to_cloud_agent() -> None:
 
 def test_pipeline_continues_locally_when_cloud_is_offline() -> None:
     cloud = FakeCloudClient(available=False)
-    pipeline = EdgePipeline(task="车辆计数", cloud_client=cloud)
+    pipeline = EdgePipeline(task="目标检测", cloud_client=cloud)
     detection = DetectionResult(device_id="edge-1", model_task="detect")
 
     cycle = pipeline.process(detection)
